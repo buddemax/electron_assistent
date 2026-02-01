@@ -1,26 +1,57 @@
 {
-  "name": "everlast",
+  "name": "voiceos",
   "version": "0.1.0",
   "private": true,
+  "main": "dist/electron/main.js",
   "scripts": {
     "dev": "next dev",
+    "dev:electron": "npx tsc -p electron/tsconfig.json && concurrently -k \"next dev\" \"wait-on http://localhost:3000 && npm run electron:dev\"",
+    "electron:dev": "NODE_ENV=development electron .",
     "build": "next build",
+    "build:electron": "tsc -p electron/tsconfig.json && next build",
     "start": "next start",
-    "lint": "eslint"
+    "start:electron": "electron .",
+    "lint": "eslint",
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "package": "npm run build:electron && electron-builder",
+    "package:mac": "npm run build:electron && electron-builder --mac",
+    "package:win": "npm run build:electron && electron-builder --win",
+    "package:linux": "npm run build:electron && electron-builder --linux"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@xenova/transformers": "^2.17.2",
+    "@xyflow/react": "^12.10.0",
+    "electron-serve": "^3.0.1",
+    "electron-store": "^11.0.2",
+    "framer-motion": "^12.29.2",
+    "groq-sdk": "^0.37.0",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
+    "electron": "^40.1.0",
+    "electron-builder": "^26.4.0",
+    "electron-vite": "^5.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^27.4.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18",
+    "wait-on": "^9.0.3"
   }
 }
