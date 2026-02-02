@@ -70,7 +70,8 @@ const OUTPUT_TYPE_DETECTION_PROMPT = `Analysiere den folgenden Text und bestimme
 Mögliche Typen:
 - email: Texte die nach einer E-Mail klingen ("schreib eine Mail an...", "Email an...", enthält Empfänger)
 - meeting-note: Meeting-bezogen ("Meeting Notizen", "Besprechung", Teilnehmer, Action Items)
-- todo: Aufgaben ("Aufgabe:", "Todo:", "ich muss...", "erledigen")
+- todo: Aufgaben ("Aufgabe:", "Todo:", "ich muss...", "erledigen", Liste von Dingen)
+- note: Notizen und Memos ("Notiz:", "merke dir...", "notiere...", "schreib auf...", kurze Gedanken festhalten)
 - question: Fragen ("Was weiß ich über...", "Wie funktioniert...", Fragezeichen)
 - brainstorm: Ideen sammeln ("Ideen für...", "Brainstorming", kreative Sammlung)
 - summary: Zusammenfassen ("Fasse zusammen...", "Summary von...")
@@ -82,7 +83,7 @@ Text: """
 {TEXT}
 """
 
-Antworte NUR mit dem Typ-Namen (z.B. "email" oder "todo"), nichts anderes.`
+Antworte NUR mit dem Typ-Namen (z.B. "email" oder "note"), nichts anderes.`
 
 const VARIANT_INSTRUCTIONS = {
   short: 'Halte es kurz und prägnant. Maximal 2-3 Sätze.',
@@ -199,6 +200,21 @@ WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
 
 Priority: "high", "medium", oder "low"`,
 
+  note: `Erstelle eine Notiz oder ein Memo.
+
+WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
+{
+  "title": "Titel der Notiz",
+  "content": "Der Inhalt der Notiz - klar und strukturiert",
+  "tags": ["optional", "tags"],
+  "category": "Optional: Kategorie wie 'Idee', 'Erinnerung', 'Wichtig'"
+}
+
+Regeln:
+- Halte die Notiz prägnant und auf den Punkt
+- Keine Einleitungen wie "Hier ist deine Notiz"
+- Der Inhalt soll direkt verwendbar sein`,
+
   question: `Beantworte die Frage basierend auf dem bereitgestellten Kontext.
 
 WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
@@ -279,6 +295,7 @@ export async function detectOutputType(
     'email',
     'meeting-note',
     'todo',
+    'note',
     'question',
     'brainstorm',
     'summary',
@@ -513,6 +530,26 @@ function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
         structured: parsed,
         displayBody: (parsed.answer as string) || text,
         title: parsed.question as string,
+      }
+    }
+
+    case 'note': {
+      const lines: string[] = []
+      if (parsed.content) {
+        lines.push(parsed.content as string)
+      }
+      if (parsed.tags && Array.isArray(parsed.tags) && (parsed.tags as string[]).length > 0) {
+        lines.push('')
+        lines.push(`Tags: ${(parsed.tags as string[]).join(', ')}`)
+      }
+      if (parsed.category) {
+        lines.push(`Kategorie: ${parsed.category}`)
+      }
+
+      return {
+        structured: parsed,
+        displayBody: lines.join('\n') || text,
+        title: parsed.title as string,
       }
     }
 

@@ -47,6 +47,26 @@ export interface ElectronAPI {
     }) => Promise<{ success: boolean; error?: string }>
     getCalendars: () => Promise<{ success: boolean; calendars?: string[]; error?: string }>
   }
+  reminders: {
+    createTask: (taskData: {
+      title: string
+      notes?: string
+      dueDate?: string
+      priority?: 'low' | 'medium' | 'high'
+      listName?: string
+    }) => Promise<{ success: boolean; error?: string }>
+    createTasks: (tasks: Array<{
+      title: string
+      notes?: string
+      dueDate?: string
+      priority?: 'low' | 'medium' | 'high'
+    }>, listName?: string) => Promise<{ success: boolean; created: number; error?: string }>
+    getLists: () => Promise<{ success: boolean; lists?: string[]; error?: string }>
+  }
+  microsoftTodo: {
+    openApp: () => Promise<{ success: boolean; error?: string }>
+    checkInstalled: () => Promise<boolean>
+  }
   app: {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<NodeJS.Platform>
@@ -109,6 +129,26 @@ const electronAPI: ElectronAPI = {
       calendarName?: string
     }) => ipcRenderer.invoke('calendar-create-event', eventData) as Promise<{ success: boolean; error?: string }>,
     getCalendars: () => ipcRenderer.invoke('calendar-get-calendars') as Promise<{ success: boolean; calendars?: string[]; error?: string }>,
+  },
+  reminders: {
+    createTask: (taskData: {
+      title: string
+      notes?: string
+      dueDate?: string
+      priority?: 'low' | 'medium' | 'high'
+      listName?: string
+    }) => ipcRenderer.invoke('reminders-create-task', taskData) as Promise<{ success: boolean; error?: string }>,
+    createTasks: (tasks: Array<{
+      title: string
+      notes?: string
+      dueDate?: string
+      priority?: 'low' | 'medium' | 'high'
+    }>, listName?: string) => ipcRenderer.invoke('reminders-create-tasks', tasks, listName) as Promise<{ success: boolean; created: number; error?: string }>,
+    getLists: () => ipcRenderer.invoke('reminders-get-lists') as Promise<{ success: boolean; lists?: string[]; error?: string }>,
+  },
+  microsoftTodo: {
+    openApp: () => ipcRenderer.invoke('microsoft-todo-open-app') as Promise<{ success: boolean; error?: string }>,
+    checkInstalled: () => ipcRenderer.invoke('microsoft-todo-check-installed') as Promise<boolean>,
   },
   app: {
     getVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,

@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ModeToggle } from '@/components/ui/toggle'
 import { useAppStore } from '@/stores/app-store'
 
 interface TitlebarProps {
@@ -9,7 +8,7 @@ interface TitlebarProps {
 }
 
 export function Titlebar({ title = 'VoiceOS' }: TitlebarProps) {
-  const { mode, toggleMode, isAlwaysOnTop, setAlwaysOnTop, setSettingsOpen, setKnowledgePanelOpen } = useAppStore()
+  const { isAlwaysOnTop, setAlwaysOnTop, setSettingsOpen, setKnowledgePanelOpen } = useAppStore()
   const [platform, setPlatform] = useState<NodeJS.Platform>('darwin')
 
   useEffect(() => {
@@ -47,14 +46,13 @@ export function Titlebar({ title = 'VoiceOS' }: TitlebarProps) {
         )}
       </div>
 
-      {/* Center - Mode Toggle */}
+      {/* Center - App name on Mac */}
       <div className="no-drag">
-        <ModeToggle
-          mode={mode}
-          onChange={(newMode) => {
-            if (newMode !== mode) toggleMode()
-          }}
-        />
+        {isMac && (
+          <span className="text-sm font-medium text-[var(--text-secondary)]">
+            {title}
+          </span>
+        )}
       </div>
 
       {/* Right side - Actions */}

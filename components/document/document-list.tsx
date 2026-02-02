@@ -43,7 +43,7 @@ export function DocumentList({ onDocumentSelect }: DocumentListProps) {
     return (
       <div className="text-center py-8">
         <p className="text-sm text-[var(--text-tertiary)]">
-          Keine Dokumente im {mode === 'work' ? 'Beruflich' : 'Privat'}-Modus
+          Keine Dokumente vorhanden
         </p>
       </div>
     )

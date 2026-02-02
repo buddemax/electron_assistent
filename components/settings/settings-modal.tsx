@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/stores/app-store'
 import { Button } from '@/components/ui/button'
 import { Toggle } from '@/components/ui/toggle'
 
-type SettingsTab = 'general' | 'voice' | 'api' | 'appearance' | 'hotkeys'
+type SettingsTab = 'general' | 'voice' | 'api' | 'integrations' | 'appearance' | 'hotkeys'
 
 export function SettingsModal() {
   const { isSettingsOpen, setSettingsOpen, settings, updateSettings, profile, resetOnboarding } = useAppStore()
@@ -16,6 +16,7 @@ export function SettingsModal() {
     { id: 'general', label: 'Allgemein' },
     { id: 'voice', label: 'Sprache' },
     { id: 'api', label: 'API Keys' },
+    { id: 'integrations', label: 'Integrationen' },
     { id: 'appearance', label: 'Aussehen' },
     { id: 'hotkeys', label: 'Shortcuts' },
   ]
@@ -98,6 +99,9 @@ export function SettingsModal() {
               {activeTab === 'api' && (
                 <ApiSettings settings={settings.api} onUpdate={(v) => updateSettings('api', v)} />
               )}
+              {activeTab === 'integrations' && (
+                <IntegrationsSettings />
+              )}
               {activeTab === 'appearance' && (
                 <AppearanceSettings settings={settings.appearance} onUpdate={(v) => updateSettings('appearance', v)} />
               )}
@@ -140,20 +144,6 @@ function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: Gen
 
   return (
     <div className="space-y-6">
-      <SettingsRow
-        label="Standard-Modus"
-        description="Beim Start aktiver Kontext"
-      >
-        <select
-          value={settings.defaultMode}
-          onChange={(e) => onUpdate({ defaultMode: e.target.value as 'private' | 'work' })}
-          className="px-3 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-sm)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-        >
-          <option value="work">Beruflich</option>
-          <option value="private">Privat</option>
-        </select>
-      </SettingsRow>
-
       <SettingsRow
         label="Output-Länge"
         description="Wie ausführlich sollen Texte sein?"
@@ -365,6 +355,122 @@ function ApiSettings({ settings, onUpdate }: SettingsSectionProps<typeof import(
   )
 }
 
+function IntegrationsSettings() {
+  const [platform, setPlatform] = useState<string>('darwin')
+
+  // Check platform on mount
+  useEffect(() => {
+    const checkPlatform = async () => {
+      if (window.electronAPI) {
+        const plat = await window.electronAPI.app.getPlatform()
+        setPlatform(plat)
+      }
+    }
+    checkPlatform()
+  }, [])
+
+  const openMicrosoftTodo = async () => {
+    if (window.electronAPI?.shell?.openExternal) {
+      await window.electronAPI.shell.openExternal('ms-todo://')
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <p className="text-xs text-[var(--text-tertiary)] mb-4">
+        Exportiere Todos direkt in deine Lieblings-Apps.
+      </p>
+
+      {/* Apple Reminders - macOS only */}
+      {platform === 'darwin' && (
+        <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center">
+              <ReminderIcon className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                Apple Erinnerungen
+              </h3>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                macOS native Integration
+              </p>
+            </div>
+            <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
+              Verfügbar
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            Aufgaben werden direkt in die Erinnerungen-App exportiert. Keine Konfiguration nötig.
+          </p>
+        </div>
+      )}
+
+      {/* Microsoft To Do */}
+      <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-lg bg-[#3b82f6] flex items-center justify-center">
+            <MicrosoftIcon className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Microsoft To Do
+            </h3>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              Plattformübergreifende Aufgaben-App
+            </p>
+          </div>
+          <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
+            Verfügbar
+          </span>
+        </div>
+
+        <p className="text-xs text-[var(--text-muted)] mb-3">
+          Öffnet Microsoft To Do mit vorausgefüllten Aufgaben. Funktioniert auf Mac, Windows und mobil.
+        </p>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={openMicrosoftTodo}
+        >
+          Microsoft To Do öffnen
+        </Button>
+      </div>
+
+      {/* Apple Calendar */}
+      <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+            <CalendarIcon className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Apple Kalender
+            </h3>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              macOS native Integration
+            </p>
+          </div>
+          <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
+            Verfügbar
+          </span>
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          Termine werden direkt in den Kalender exportiert.
+        </p>
+      </div>
+
+      {/* Info box */}
+      <div className="p-3 bg-[var(--bg-secondary)] rounded-[var(--radius-sm)]">
+        <p className="text-xs text-[var(--text-secondary)]">
+          <strong>Tipp:</strong> Bei der Ausgabe von Todos oder Terminen erscheinen automatisch Buttons zum direkten Export.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function AppearanceSettings({ settings, onUpdate }: SettingsSectionProps<typeof import('@/types/settings').DEFAULT_SETTINGS.appearance>) {
   return (
     <div className="space-y-6">
@@ -429,15 +535,6 @@ function HotkeySettings({ settings }: SettingsSectionProps<typeof import('@/type
       >
         <kbd className="px-2 py-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-xs font-mono text-[var(--text-secondary)]">
           ⌘ ⇧ Space
-        </kbd>
-      </SettingsRow>
-
-      <SettingsRow
-        label="Modus wechseln"
-        description="Zwischen Privat/Beruflich"
-      >
-        <kbd className="px-2 py-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-xs font-mono text-[var(--text-secondary)]">
-          ⌘ ⇧ M
         </kbd>
       </SettingsRow>
 
@@ -509,6 +606,34 @@ function EyeOffIcon({ className }: { className?: string }) {
       <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
       <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
       <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  )
+}
+
+function ReminderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  )
+}
+
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zm12.6 0H12.6V0H24v11.4z" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+      <line x1="16" x2="16" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="2" y2="6" />
+      <line x1="3" x2="21" y1="10" y2="10" />
     </svg>
   )
 }

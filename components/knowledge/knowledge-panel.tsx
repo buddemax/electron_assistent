@@ -111,9 +111,6 @@ export function KnowledgePanel({ onClose }: KnowledgePanelProps) {
             <h1 className="text-base font-semibold text-[var(--text-primary)]">
               Speicher
             </h1>
-            <span className="px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-subtle)] text-[var(--accent)] rounded-full">
-              {mode === 'work' ? 'Beruflich' : 'Privat'}
-            </span>
           </div>
 
           <button

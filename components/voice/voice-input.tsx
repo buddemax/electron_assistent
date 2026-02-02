@@ -620,35 +620,33 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
               </button>
             )}
           </motion.div>
-        ) : voiceMode === 'processing' ? (
+        ) : voiceMode === 'processing' && !compact ? (
           <motion.div
             key="processing"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className={`text-center ${compact ? 'flex items-center gap-3' : ''}`}
+            className="text-center"
           >
-            <div className={`${compact ? 'w-8 h-8' : 'w-16 h-16 mb-4'} rounded-full bg-[var(--accent-subtle)] flex items-center justify-center ${compact ? '' : 'mx-auto'}`}>
+            <div className="w-16 h-16 mb-4 rounded-full bg-[var(--accent-subtle)] flex items-center justify-center mx-auto">
               <motion.div
-                className={`${compact ? 'w-4 h-4' : 'w-8 h-8'} border-2 border-[var(--accent)] border-t-transparent rounded-full`}
+                className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
               />
             </div>
-            <p className={`text-[var(--text-primary)] font-medium ${compact ? 'text-sm' : ''}`}>
+            <p className="text-[var(--text-primary)] font-medium">
               Generiere...
             </p>
-            {!compact && (
-              <button
-                onClick={handleCancel}
-                className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
-              >
-                <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
-                  Esc
-                </kbd>
-                Abbrechen
-              </button>
-            )}
+            <button
+              onClick={handleCancel}
+              className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
+            >
+              <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
+                Esc
+              </kbd>
+              Abbrechen
+            </button>
           </motion.div>
         ) : (
           <motion.div

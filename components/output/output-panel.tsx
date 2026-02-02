@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOutputStore } from '@/stores/output-store'
 import { OutputTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { resolveDate } from '@/lib/utils/date'
+import * as microsoftTodo from '@/lib/integrations/microsoft-todo'
 
 export function OutputPanel() {
   const {
@@ -17,6 +18,25 @@ export function OutputPanel() {
   const [copied, setCopied] = useState(false)
   const [calendarAdded, setCalendarAdded] = useState(false)
   const [calendarError, setCalendarError] = useState<string | null>(null)
+
+  // Todo export states
+  const [remindersAdded, setRemindersAdded] = useState(false)
+  const [remindersError, setRemindersError] = useState<string | null>(null)
+  const [microsoftOpened, setMicrosoftOpened] = useState(false)
+  const [microsoftUsedWeb, setMicrosoftUsedWeb] = useState(false)
+  const [microsoftError, setMicrosoftError] = useState<string | null>(null)
+  const [platform, setPlatform] = useState<string>('darwin')
+
+  // Check platform on mount
+  useEffect(() => {
+    const checkPlatform = async () => {
+      if (window.electronAPI) {
+        const plat = await window.electronAPI.app.getPlatform()
+        setPlatform(plat)
+      }
+    }
+    checkPlatform()
+  }, [])
 
   const handleCopy = async () => {
     if (currentOutput?.content.body) {
@@ -108,6 +128,111 @@ export function OutputPanel() {
     }
   }
 
+  // ==================== TODO FUNCTIONS ====================
+
+  const getTodoData = () => {
+    if (!currentOutput?.type || currentOutput.type !== 'todo' || !currentOutput.content.structured) {
+      return null
+    }
+
+    const structured = currentOutput.content.structured as {
+      items?: Array<{
+        id: string
+        text: string
+        completed: boolean
+      }>
+      priority?: 'low' | 'medium' | 'high'
+      dueDate?: string
+    }
+
+    return {
+      items: structured.items || [],
+      priority: structured.priority || 'medium',
+      dueDate: structured.dueDate,
+    }
+  }
+
+  const handleAddToReminders = async () => {
+    const todoData = getTodoData()
+    if (!todoData || todoData.items.length === 0) {
+      setRemindersError('Keine Aufgaben gefunden')
+      return
+    }
+
+    if (!window.electronAPI?.reminders) {
+      setRemindersError('Erinnerungen-Integration nicht verfügbar')
+      return
+    }
+
+    setRemindersError(null)
+
+    // Map todo items to reminder tasks
+    const tasks = todoData.items
+      .filter(item => !item.completed)
+      .map(item => ({
+        title: item.text,
+        priority: todoData.priority,
+        dueDate: todoData.dueDate,
+      }))
+
+    if (tasks.length === 0) {
+      setRemindersError('Alle Aufgaben bereits erledigt')
+      return
+    }
+
+    const result = await window.electronAPI.reminders.createTasks(tasks)
+
+    if (result.success) {
+      setRemindersAdded(true)
+      setTimeout(() => setRemindersAdded(false), 3000)
+    } else {
+      setRemindersError(result.error || 'Fehler beim Erstellen der Erinnerungen')
+    }
+  }
+
+  const handleAddToMicrosoftTodo = async () => {
+    const todoData = getTodoData()
+    if (!todoData || todoData.items.length === 0) {
+      setMicrosoftError('Keine Aufgaben gefunden')
+      return
+    }
+
+    setMicrosoftError(null)
+
+    // Map todo items to Microsoft To Do tasks
+    const tasks = todoData.items
+      .filter(item => !item.completed)
+      .map(item => ({
+        title: item.text,
+        priority: todoData.priority,
+        dueDate: todoData.dueDate,
+      }))
+
+    if (tasks.length === 0) {
+      setMicrosoftError('Alle Aufgaben bereits erledigt')
+      return
+    }
+
+    try {
+      // Open Microsoft To Do app (native or web fallback)
+      const result = await microsoftTodo.openWithTasks(tasks)
+
+      if (result.success) {
+        setMicrosoftOpened(true)
+        setMicrosoftUsedWeb(result.usedWeb)
+        // Show longer if web version was used (user needs to paste)
+        setTimeout(() => {
+          setMicrosoftOpened(false)
+          setMicrosoftUsedWeb(false)
+        }, result.usedWeb ? 5000 : 3000)
+      } else {
+        setMicrosoftError('Microsoft To Do konnte nicht geöffnet werden')
+      }
+    } catch (error) {
+      setMicrosoftError(error instanceof Error ? error.message : 'Unbekannter Fehler')
+    }
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header with type badge */}
@@ -124,11 +249,28 @@ export function OutputPanel() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center h-full"
+              className="flex flex-col items-center justify-center h-full gap-4"
             >
-              <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-4" />
-              <p className="text-[var(--text-secondary)] text-sm">
-                Generiere Output...
+              {/* Nicer loading indicator with pulsing dots */}
+              <div className="flex items-center gap-2">
+                <motion.div
+                  className="w-3 h-3 rounded-full bg-[var(--accent)]"
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-3 h-3 rounded-full bg-[var(--accent)]"
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-3 h-3 rounded-full bg-[var(--accent)]"
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
+              <p className="text-[var(--text-secondary)] text-sm font-medium">
+                Generiere...
               </p>
             </motion.div>
           ) : currentOutput ? (
@@ -142,19 +284,19 @@ export function OutputPanel() {
             >
               {/* Email-specific header */}
               {currentOutput.type === 'email' && currentOutput.content.structured && (
-                <div className="space-y-2 pb-3 border-b border-[var(--border-subtle)]">
+                <div className="space-y-3 pb-4 border-b border-[var(--border-subtle)]">
                   {(currentOutput.content.structured as { to?: string }).to && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-[var(--text-muted)] w-12">An:</span>
-                      <span className="text-[var(--text-primary)]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[var(--text-muted)] w-16 text-sm">An:</span>
+                      <span className="text-[var(--text-primary)] text-base">
                         {(currentOutput.content.structured as { to: string }).to}
                       </span>
                     </div>
                   )}
                   {currentOutput.content.title && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-[var(--text-muted)] w-12">Betreff:</span>
-                      <span className="text-[var(--text-primary)] font-medium">
+                    <div className="flex items-center gap-3">
+                      <span className="text-[var(--text-muted)] w-16 text-sm">Betreff:</span>
+                      <span className="text-[var(--text-primary)] font-semibold text-base">
                         {currentOutput.content.title}
                       </span>
                     </div>
@@ -162,9 +304,95 @@ export function OutputPanel() {
                 </div>
               )}
 
+              {/* Todo-specific display */}
+              {currentOutput.type === 'todo' && currentOutput.content.structured && (
+                <div className="space-y-4">
+                  {(() => {
+                    const structured = currentOutput.content.structured as {
+                      items?: Array<{
+                        id: string
+                        text: string
+                        completed: boolean
+                      }>
+                      priority?: 'low' | 'medium' | 'high'
+                      dueDate?: string
+                    }
+                    const items = structured.items || []
+                    const priority = structured.priority
+
+                    if (items.length === 0) return null
+
+                    const priorityLabels = {
+                      low: 'Niedrig',
+                      medium: 'Mittel',
+                      high: 'Hoch',
+                    }
+
+                    const priorityColors = {
+                      low: 'text-green-500',
+                      medium: 'text-yellow-500',
+                      high: 'text-red-500',
+                    }
+
+                    return (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
+                            <TodoIcon className="w-6 h-6 text-[var(--accent)]" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                              {items.length} Aufgabe{items.length !== 1 ? 'n' : ''}
+                            </h3>
+                            {priority && (
+                              <span className={`text-sm ${priorityColors[priority]}`}>
+                                Priorität: {priorityLabels[priority]}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 mt-2">
+                          {items.map((item, index) => (
+                            <div
+                              key={item.id || index}
+                              className={`flex items-start gap-3 p-3 rounded-lg bg-[var(--bg-secondary)] ${
+                                item.completed ? 'opacity-50' : ''
+                              }`}
+                            >
+                              <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                                item.completed
+                                  ? 'bg-[var(--accent)] border-[var(--accent)]'
+                                  : 'border-[var(--border)]'
+                              }`}>
+                                {item.completed && (
+                                  <CheckIcon className="w-3 h-3 text-white" />
+                                )}
+                              </div>
+                              <span className={`text-[var(--text-primary)] font-medium ${
+                                item.completed ? 'line-through' : ''
+                              }`}>
+                                {item.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {structured.dueDate && (
+                          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                            <CalendarIcon className="w-4 h-4" />
+                            <span>Fällig: {structured.dueDate}</span>
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+
               {/* Calendar-specific display */}
               {currentOutput.type === 'calendar' && currentOutput.content.structured && (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   {(() => {
                     const structured = currentOutput.content.structured as {
                       event?: {
@@ -187,38 +415,38 @@ export function OutputPanel() {
 
                     return (
                       <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-md bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
-                            <CalendarIcon className="w-4 h-4 text-[var(--accent)]" />
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
+                            <CalendarIcon className="w-6 h-6 text-[var(--accent)]" />
                           </div>
-                          <h3 className="text-sm font-medium text-[var(--text-primary)] truncate">
+                          <h3 className="text-lg font-semibold text-[var(--text-primary)]">
                             {event.title}
                           </h3>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs pl-10">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[var(--text-muted)] text-[10px]">📅</span>
-                            <span className="text-[var(--text-secondary)]">
+                        <div className="grid grid-cols-1 gap-3 pl-15 mt-2">
+                          <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
+                            <span className="text-lg">📅</span>
+                            <span className="text-[var(--text-primary)] font-medium">
                               {formatted?.dateDisplay || event.date}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[var(--text-muted)] text-[10px]">🕐</span>
-                            <span className="text-[var(--text-secondary)]">
+                          <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
+                            <span className="text-lg">🕐</span>
+                            <span className="text-[var(--text-primary)] font-medium">
                               {formatted?.timeDisplay || event.time}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[var(--text-muted)] text-[10px]">⏱</span>
-                            <span className="text-[var(--text-secondary)]">
-                              {formatted?.durationDisplay || `${event.duration} Min.`}
+                          <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
+                            <span className="text-lg">⏱</span>
+                            <span className="text-[var(--text-primary)] font-medium">
+                              {formatted?.durationDisplay || `${event.duration} Minuten`}
                             </span>
                           </div>
                           {event.location && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[var(--text-muted)] text-[10px]">📍</span>
-                              <span className="text-[var(--text-secondary)] truncate">
+                            <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-secondary)]">
+                              <span className="text-lg">📍</span>
+                              <span className="text-[var(--text-primary)] font-medium">
                                 {event.location}
                               </span>
                             </div>
@@ -230,17 +458,17 @@ export function OutputPanel() {
                 </div>
               )}
 
-              {/* Title for non-email/calendar types */}
-              {currentOutput.type !== 'email' && currentOutput.type !== 'calendar' && currentOutput.content.title && (
-                <h2 className="text-lg font-medium text-[var(--text-primary)]">
+              {/* Title for non-email/calendar/todo types */}
+              {currentOutput.type !== 'email' && currentOutput.type !== 'calendar' && currentOutput.type !== 'todo' && currentOutput.content.title && (
+                <h2 className="text-xl font-semibold text-[var(--text-primary)]">
                   {currentOutput.content.title}
                 </h2>
               )}
 
-              {/* Body - hide for calendar if already displayed above */}
-              {currentOutput.type !== 'calendar' && (
-                <div className="prose prose-sm prose-invert max-w-none">
-                  <div className="whitespace-pre-wrap text-[var(--text-secondary)] leading-relaxed text-sm">
+              {/* Body - hide for calendar/todo if already displayed above */}
+              {currentOutput.type !== 'calendar' && currentOutput.type !== 'todo' && (
+                <div className="prose prose-invert max-w-none">
+                  <div className="whitespace-pre-wrap text-[var(--text-primary)] leading-relaxed text-base">
                     {currentOutput.content.body}
                   </div>
                 </div>
@@ -320,13 +548,70 @@ export function OutputPanel() {
             </Button>
           )}
 
+          {/* Todo export buttons */}
+          {currentOutput.type === 'todo' && (
+            <>
+              {/* Apple Reminders - only on macOS */}
+              {platform === 'darwin' && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleAddToReminders}
+                  disabled={remindersAdded}
+                  className="text-xs px-2 py-1"
+                >
+                  {remindersAdded ? (
+                    <>
+                      <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                      Hinzugefügt
+                    </>
+                  ) : (
+                    <>
+                      <ReminderIcon className="w-3.5 h-3.5 mr-1" />
+                      Erinnerungen
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {/* Microsoft To Do - cross-platform */}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddToMicrosoftTodo}
+                disabled={microsoftOpened}
+                className="text-xs px-2 py-1"
+                title="Öffnet Microsoft To Do App"
+              >
+                {microsoftOpened ? (
+                  <>
+                    <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                    {microsoftUsedWeb ? 'Web geöffnet (Cmd+V)' : 'App geöffnet'}
+                  </>
+                ) : (
+                  <>
+                    <MicrosoftIcon className="w-3.5 h-3.5 mr-1" />
+                    To Do
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+
           <Button variant="ghost" size="sm" className="text-xs px-2 py-1">
             <RefreshIcon className="w-3.5 h-3.5 mr-1" />
             Neu
           </Button>
 
+          {/* Error messages */}
           {calendarError && (
             <span className="text-[10px] text-red-500 ml-auto">{calendarError}</span>
+          )}
+          {remindersError && (
+            <span className="text-[10px] text-red-500 ml-auto">{remindersError}</span>
+          )}
+          {microsoftError && (
+            <span className="text-[10px] text-red-500 ml-auto">{microsoftError}</span>
           )}
         </div>
       )}
@@ -396,6 +681,32 @@ function CalendarIcon({ className }: { className?: string }) {
       <line x1="16" x2="16" y1="2" y2="6" />
       <line x1="8" x2="8" y1="2" y2="6" />
       <line x1="3" x2="21" y1="10" y2="10" />
+    </svg>
+  )
+}
+
+function TodoIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  )
+}
+
+function ReminderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  )
+}
+
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zm12.6 0H12.6V0H24v11.4z" />
     </svg>
   )
 }

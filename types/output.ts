@@ -9,6 +9,7 @@ export type OutputType =
   | 'summary'
   | 'code'
   | 'calendar'
+  | 'note'
   | 'general'
 
 export type OutputVariant = 'short' | 'standard' | 'detailed'

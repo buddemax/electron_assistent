@@ -119,8 +119,8 @@ export default function Home() {
                 {/* Voice Input Section */}
                 <div
                   className={`
-                    flex-shrink-0 transition-all duration-300 ease-out relative
-                    ${showOutput ? 'h-32' : 'flex-1 flex items-center justify-center'}
+                    flex-shrink-0 transition-all duration-300 ease-out relative flex items-center justify-center
+                    ${showOutput ? 'h-28 min-h-[7rem]' : 'flex-1'}
                   `}
                 >
                   <VoiceInput compact={showOutput} />

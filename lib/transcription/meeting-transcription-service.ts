@@ -60,6 +60,24 @@ export class MeetingTranscriptionService {
   }
 
   /**
+   * Set the active speaker for subsequent segments
+   * This is called when the user manually tags a speaker
+   */
+  setActiveSpeaker(speakerId: string | null): void {
+    this.currentSpeakerId = speakerId
+  }
+
+  /**
+   * Register an externally created speaker (from SpeakerTagger)
+   */
+  registerSpeaker(speaker: Speaker): void {
+    if (!this.speakers.has(speaker.id)) {
+      this.speakers.set(speaker.id, speaker)
+      this.speakerCounter = Math.max(this.speakerCounter, this.speakers.size)
+    }
+  }
+
+  /**
    * Process a new audio chunk for transcription
    */
   processChunk(data: ChunkData): void {
@@ -196,8 +214,11 @@ export class MeetingTranscriptionService {
   }
 
   private detectSpeaker(text: string, startTime: number): string {
-    // Simple heuristic-based speaker detection
-    // In production, this would use a proper diarization model
+    // If user has manually set an active speaker, use that
+    // This takes priority over automatic detection
+    if (this.currentSpeakerId && this.speakers.has(this.currentSpeakerId)) {
+      return this.currentSpeakerId
+    }
 
     // Check for explicit speaker indicators in text
     const speakerMatch = text.match(/^\[?(Speaker\s*\d+|Sprecher\s*\d+)\]?:/i)
@@ -206,7 +227,7 @@ export class MeetingTranscriptionService {
       return this.getOrCreateSpeaker(label).id
     }
 
-    // For now, use the current speaker or create a new one if none exists
+    // Create a new speaker if none exists
     if (!this.currentSpeakerId) {
       const speaker = this.createNewSpeaker()
       this.currentSpeakerId = speaker.id

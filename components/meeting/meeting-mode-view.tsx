@@ -7,6 +7,7 @@ import { Waveform } from '@/components/voice/waveform'
 import { MeetingTimer } from './meeting-timer'
 import { MeetingControls } from './meeting-controls'
 import { LiveTranscript } from './live-transcript'
+import { SpeakerTagger } from './speaker-tagger'
 import { ExportModal } from './export'
 import { useMeetingStore } from '@/stores/meeting-store'
 import { useTranscriptStore } from '@/stores/transcript-store'
@@ -57,6 +58,7 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
   const {
     segments,
     speakers,
+    activeSpeakerId,
     isAutoScrollEnabled,
     setAutoScroll,
     addSegment,
@@ -91,6 +93,23 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
 
     return () => clearInterval(interval)
   }, [status, currentMeeting, updateDuration])
+
+  // Sync active speaker from transcript store to transcription service
+  useEffect(() => {
+    if (transcriptionServiceRef.current && activeSpeakerId) {
+      transcriptionServiceRef.current.setActiveSpeaker(activeSpeakerId)
+    }
+  }, [activeSpeakerId])
+
+  // Register new speakers with transcription service
+  useEffect(() => {
+    if (!transcriptionServiceRef.current) return
+
+    // Register all speakers with the transcription service
+    for (const speaker of speakers) {
+      transcriptionServiceRef.current.registerSpeaker(speaker)
+    }
+  }, [speakers])
 
   const handleStartMeeting = useCallback(async () => {
     // Clear previous transcript
@@ -295,20 +314,9 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
       <Card variant="elevated" padding="md" className="mb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[var(--text-secondary)] text-sm">
-                Meeting-Modus
-              </span>
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  mode === 'work'
-                    ? 'bg-blue-500/10 text-blue-400'
-                    : 'bg-green-500/10 text-green-400'
-                }`}
-              >
-                {mode === 'work' ? 'Arbeit' : 'Privat'}
-              </span>
-            </div>
+            <span className="text-[var(--text-secondary)] text-sm">
+              Meeting-Modus
+            </span>
 
             {isRecordingOrPaused && currentMeeting && (
               <MeetingTimer
@@ -328,6 +336,13 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
             isFinalizing={isFinalizingTranscription}
           />
         </div>
+
+        {/* Speaker Tagger - shows during recording */}
+        {isRecordingOrPaused && (
+          <div className="mt-3 flex justify-center">
+            <SpeakerTagger isRecording={status === 'recording'} />
+          </div>
+        )}
 
         {/* Waveform */}
         {isRecordingOrPaused && settings.showWaveform && (

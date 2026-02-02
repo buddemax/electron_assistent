@@ -104,9 +104,6 @@ function updateTrayMenu(): void {
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show VoiceOS', click: () => mainWindow?.show() },
     { type: 'separator' },
-    { label: 'Private Mode', type: 'radio', checked: true },
-    { label: 'Work Mode', type: 'radio' },
-    { type: 'separator' },
     ...(isMeetingRecording
       ? [
           { label: '🔴 Meeting läuft...', enabled: false },
@@ -408,6 +405,224 @@ end tell
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       return { success: false, error: errorMessage }
+    }
+  })
+
+  // ==================== APPLE REMINDERS ====================
+
+  // Create reminder in Apple Reminders
+  ipcMain.handle('reminders-create-task', async (_event, taskData: {
+    title: string
+    notes?: string
+    dueDate?: string
+    priority?: 'low' | 'medium' | 'high'
+    listName?: string
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Reminders integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const escapeForAppleScript = (str: string): string => {
+        return str
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+      }
+
+      const title = escapeForAppleScript(taskData.title)
+      const notes = taskData.notes ? escapeForAppleScript(taskData.notes) : ''
+      const listName = taskData.listName
+
+      // Map priority: low=9, medium=5, high=1 (Apple's priority scale is 1-9, 1=highest)
+      const priorityMap = { low: 9, medium: 5, high: 1 }
+      const priority = taskData.priority ? priorityMap[taskData.priority] : 0
+
+      // Build list selection
+      const listSelection = listName
+        ? `set targetList to first list whose name is "${escapeForAppleScript(listName)}"`
+        : `set targetList to default list`
+
+      // Build due date if provided
+      let dueDateScript = ''
+      if (taskData.dueDate) {
+        const dueDate = new Date(taskData.dueDate)
+        dueDateScript = `
+  set dueDate to (current date)
+  set year of dueDate to ${dueDate.getFullYear()}
+  set month of dueDate to ${dueDate.getMonth() + 1}
+  set day of dueDate to ${dueDate.getDate()}
+  set hours of dueDate to ${dueDate.getHours()}
+  set minutes of dueDate to ${dueDate.getMinutes()}
+  set seconds of dueDate to 0`
+      }
+
+      const appleScript = `
+tell application "Reminders"
+  ${listSelection}
+  ${dueDateScript}
+  tell targetList
+    set newReminder to make new reminder with properties {name:"${title}"${notes ? `, body:"${notes}"` : ''}${priority > 0 ? `, priority:${priority}` : ''}${taskData.dueDate ? ', due date:dueDate' : ''}}
+  end tell
+  return "success"
+end tell
+`
+
+      await execAsync(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`)
+      return { success: true }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Reminders create task error:', errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // Create multiple reminders at once
+  ipcMain.handle('reminders-create-tasks', async (_event, tasks: Array<{
+    title: string
+    notes?: string
+    dueDate?: string
+    priority?: 'low' | 'medium' | 'high'
+  }>, listName?: string): Promise<{ success: boolean; created: number; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, created: 0, error: 'Reminders integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const escapeForAppleScript = (str: string): string => {
+        return str
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+      }
+
+      const listSelection = listName
+        ? `set targetList to first list whose name is "${escapeForAppleScript(listName)}"`
+        : `set targetList to default list`
+
+      const priorityMap = { low: 9, medium: 5, high: 1 }
+
+      // Build reminder creation statements
+      const reminderStatements = tasks.map(task => {
+        const title = escapeForAppleScript(task.title)
+        const notes = task.notes ? escapeForAppleScript(task.notes) : ''
+        const priority = task.priority ? priorityMap[task.priority] : 0
+        return `make new reminder with properties {name:"${title}"${notes ? `, body:"${notes}"` : ''}${priority > 0 ? `, priority:${priority}` : ''}}`
+      }).join('\n      ')
+
+      const appleScript = `
+tell application "Reminders"
+  ${listSelection}
+  tell targetList
+      ${reminderStatements}
+  end tell
+  return "success"
+end tell
+`
+
+      await execAsync(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`)
+      return { success: true, created: tasks.length }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Reminders create tasks error:', errorMessage)
+      return { success: false, created: 0, error: errorMessage }
+    }
+  })
+
+  // Get available reminder lists
+  ipcMain.handle('reminders-get-lists', async (): Promise<{ success: boolean; lists?: string[]; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Reminders integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const appleScript = `
+tell application "Reminders"
+  set listNames to {}
+  repeat with reminderList in lists
+    set end of listNames to name of reminderList
+  end repeat
+  return listNames
+end tell
+`
+      const { stdout } = await execAsync(`osascript -e '${appleScript}'`)
+      const lists = stdout.trim().split(', ').filter(Boolean)
+      return { success: true, lists }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // ==================== MICROSOFT TO DO ====================
+
+  // Open Microsoft To Do app (native)
+  ipcMain.handle('microsoft-todo-open-app', async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      if (process.platform === 'darwin') {
+        // Try to open the app on macOS
+        try {
+          await execAsync('open -a "Microsoft To Do"')
+          return { success: true }
+        } catch {
+          // App might not be installed, try alternative name
+          try {
+            await execAsync('open -a "To Do"')
+            return { success: true }
+          } catch {
+            return { success: false, error: 'Microsoft To Do App nicht gefunden' }
+          }
+        }
+      } else if (process.platform === 'win32') {
+        // On Windows, use start command with URL scheme
+        try {
+          await execAsync('start ms-todo:')
+          return { success: true }
+        } catch {
+          return { success: false, error: 'Microsoft To Do App nicht gefunden' }
+        }
+      }
+
+      return { success: false, error: 'Plattform nicht unterstützt' }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unbekannter Fehler' }
+    }
+  })
+
+  // Check if Microsoft To Do app is installed
+  ipcMain.handle('microsoft-todo-check-installed', async (): Promise<boolean> => {
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      if (process.platform === 'darwin') {
+        try {
+          await execAsync('mdfind "kMDItemCFBundleIdentifier == com.microsoft.to-do-mac"')
+          return true
+        } catch {
+          return false
+        }
+      }
+      return false
+    } catch {
+      return false
     }
   })
 }
