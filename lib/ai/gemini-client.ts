@@ -1,30 +1,45 @@
 import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
 import type { OutputType, OutputVariant, Mode, GeneratedOutput } from '@/types/output'
 import type { KnowledgeReference } from '@/types/knowledge'
+import type { UserProfile } from '@/types/profile'
+import { buildProfileContext } from '@/lib/ai/profile-prompt'
 import { v4 as uuidv4 } from 'uuid'
 
 let genAI: GoogleGenerativeAI | null = null
 let model: GenerativeModel | null = null
 
-export function getGeminiClient(apiKey?: string): GenerativeModel {
+interface GeminiClientOptions {
+  maxOutputTokens?: number
+  temperature?: number
+}
+
+export function getGeminiClient(apiKey?: string, options?: GeminiClientOptions): GenerativeModel {
   const key = apiKey || process.env.GEMINI_API_KEY
   if (!key) {
     throw new Error('GEMINI_API_KEY is not configured')
   }
 
-  if (!genAI || apiKey) {
+  const maxTokens = options?.maxOutputTokens ?? 2048
+  const temperature = options?.temperature ?? 0.7
+
+  // Always create fresh client when options are provided or apiKey changes
+  if (!genAI || apiKey || options) {
     genAI = new GoogleGenerativeAI(key)
     model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
       generationConfig: {
-        temperature: 0.7,
+        temperature,
         topP: 0.9,
-        maxOutputTokens: 2048,
+        maxOutputTokens: maxTokens,
       },
     })
   }
 
-  return model!
+  if (!model) {
+    throw new Error('Failed to initialize Gemini model')
+  }
+
+  return model
 }
 
 export interface GenerateOptions {
@@ -35,6 +50,8 @@ export interface GenerateOptions {
   context?: readonly KnowledgeReference[]
   customInstructions?: string
   language?: 'de' | 'en'
+  profile?: UserProfile
+  conversationContext?: string
 }
 
 export interface GenerateResult {
@@ -227,13 +244,10 @@ export async function generateOutput(
     contextString = `\n\nRelevanter Kontext:\n${options.context
       .map((c) => `- ${c.snippet}`)
       .join('\n')}`
-    console.log('[Gemini] ========================================')
-    console.log('[Gemini] Context items:', options.context.length)
-    console.log('[Gemini] Context string for prompt:', contextString)
-    console.log('[Gemini] ========================================')
-  } else {
-    console.log('[Gemini] NO CONTEXT PROVIDED!')
   }
+
+  // Build profile context if available
+  const profileContext = options.profile ? buildProfileContext(options.profile) : ''
 
   // Generate all three variants
   const variants: OutputVariant[] = ['short', 'standard', 'detailed']
@@ -247,21 +261,28 @@ ${contextString}
 === ENDE KONTEXT ===
 ` : ''
 
+    // Include conversation history if available - this is critical for follow-up questions
+    const conversationSection = options.conversationContext ? `
+=== KONVERSATIONSKONTEXT ===
+${options.conversationContext}
+=== ENDE KONVERSATIONSKONTEXT ===
+` : ''
+
     const systemPrompt = `Du bist ein Assistent der strukturierte Outputs auf Deutsch generiert.
 ${options.mode === 'work' ? 'Kontext: Beruflich - professioneller Ton.' : 'Kontext: Privat - freundlicher Ton.'}
 ${VARIANT_INSTRUCTIONS[variant]}
-${options.customInstructions || ''}
+${options.customInstructions || ''}${profileContext}
+
+${conversationSection ? `KONVERSATION AKTIV: Der Nutzer führt ein fortlaufendes Gespräch.
+Wenn die aktuelle Frage keine spezifischen Themen erwähnt, beziehe sie auf die vorherige Konversation.
+Fragen wie "wer war dabei?", "und sonst noch?", "gibt es weitere?" beziehen sich auf das zuvor besprochene Thema.
+
+${conversationSection}` : ''}
+
 ${contextSection}
 ${OUTPUT_TYPE_PROMPTS[outputType]}
 
 KRITISCH: Antworte AUSSCHLIESSLICH mit gültigem JSON. Kein Text davor oder danach.`
-
-    // Log the full prompt for debugging (only for 'standard' variant to avoid spam)
-    if (variant === 'standard') {
-      console.log('[Gemini] ========== FULL PROMPT ==========')
-      console.log(systemPrompt)
-      console.log('[Gemini] ========== END PROMPT ==========')
-    }
 
     const result = await model.generateContent({
       contents: [
@@ -529,10 +550,11 @@ export async function* streamGeneration(
 ): AsyncGenerator<{ chunk: string } | { complete: GeneratedOutput }> {
   const model = getGeminiClient(apiKey)
   const outputType = options.outputType || await detectOutputType(options.transcription, apiKey)
+  const profileContext = options.profile ? buildProfileContext(options.profile) : ''
 
   const systemPrompt = `Du bist ein Assistent der strukturierte Outputs auf Deutsch generiert.
 ${options.mode === 'work' ? 'Kontext: Beruflich - professioneller Ton.' : 'Kontext: Privat - freundlicher Ton.'}
-${VARIANT_INSTRUCTIONS[options.variant]}
+${VARIANT_INSTRUCTIONS[options.variant]}${profileContext}
 
 ${OUTPUT_TYPE_PROMPTS[outputType]}
 

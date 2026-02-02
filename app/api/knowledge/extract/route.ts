@@ -9,6 +9,14 @@ const extractRequestSchema = z.object({
   mode: z.enum(['private', 'work']),
 })
 
+export interface ExtractedFactResponse {
+  content: string
+  entityType: string
+  relatedEntity: string
+  tags: string[]
+  confidence: number
+}
+
 export interface ExtractResponse {
   entities: Array<{
     text: string
@@ -19,6 +27,8 @@ export interface ExtractResponse {
   storeReason: string
   suggestedTags: string[]
   primaryType: string | null
+  /** Facts extracted from the text that should be stored separately */
+  extractedFacts: ExtractedFactResponse[]
 }
 
 export async function POST(request: NextRequest) {
@@ -75,6 +85,13 @@ export async function POST(request: NextRequest) {
         storeReason: result.storeReason,
         suggestedTags: result.suggestedTags,
         primaryType: primaryType || null,
+        extractedFacts: result.extractedFacts.map(f => ({
+          content: f.content,
+          entityType: f.entityType,
+          relatedEntity: f.relatedEntity,
+          tags: f.tags,
+          confidence: f.confidence,
+        })),
       },
       meta: {
         requestId: crypto.randomUUID(),

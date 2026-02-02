@@ -2,6 +2,7 @@ import type { Mode, OutputType, OutputVariant, GeneratedOutput } from './output'
 import type { KnowledgeReference, KnowledgeEntry, SmartSuggestion, KnowledgeSearchResult } from './knowledge'
 import type { TranscriptionResult } from './voice'
 import type { GraphNode, GraphEdge } from './graph'
+import type { UserProfile } from './profile'
 
 // Re-export KnowledgeSearchResult from knowledge for convenience (used in this module)
 export type { KnowledgeSearchResult } from './knowledge'
@@ -43,6 +44,7 @@ export interface GenerateRequest {
   readonly variant: OutputVariant
   readonly context?: readonly KnowledgeReference[]
   readonly customInstructions?: string
+  readonly profile?: UserProfile
 }
 
 export interface GenerateResponse {

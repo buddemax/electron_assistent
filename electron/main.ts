@@ -1,6 +1,10 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell, powerSaveBlocker } from 'electron'
 import * as path from 'path'
 import Store from 'electron-store'
+
+// Meeting recording state
+let meetingPowerSaveBlockerId: number | null = null
+let isMeetingRecording = false
 
 // Type the store with any to work around type resolution issues
 const store: { get: (key: string) => unknown; set: (key: string, value: unknown) => void; delete: (key: string) => void } = new Store() as never
@@ -60,19 +64,7 @@ function createTray(): void {
 
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show VoiceOS', click: () => mainWindow?.show() },
-    { type: 'separator' },
-    { label: 'Private Mode', type: 'radio', checked: true },
-    { label: 'Work Mode', type: 'radio' },
-    { type: 'separator' },
-    { label: 'Settings', click: () => mainWindow?.webContents.send('open-settings') },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
-  ])
-
-  tray.setToolTip('VoiceOS')
-  tray.setContextMenu(contextMenu)
+  updateTrayMenu()
 
   tray.on('click', () => {
     if (mainWindow?.isVisible()) {
@@ -81,6 +73,39 @@ function createTray(): void {
       mainWindow?.show()
     }
   })
+}
+
+function updateTrayMenu(): void {
+  if (!tray) return
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Show VoiceOS', click: () => mainWindow?.show() },
+    { type: 'separator' },
+    { label: 'Private Mode', type: 'radio', checked: true },
+    { label: 'Work Mode', type: 'radio' },
+    { type: 'separator' },
+    ...(isMeetingRecording
+      ? [
+          { label: '🔴 Meeting läuft...', enabled: false },
+          { label: 'Meeting beenden', click: () => mainWindow?.webContents.send('meeting-stop-requested') },
+          { type: 'separator' as const },
+        ]
+      : []),
+    { label: 'Settings', click: () => mainWindow?.webContents.send('open-settings') },
+    { type: 'separator' },
+    { label: 'Quit', click: () => {
+      if (isMeetingRecording) {
+        // Warn user about active meeting
+        mainWindow?.show()
+        mainWindow?.webContents.send('meeting-quit-warning')
+      } else {
+        app.quit()
+      }
+    }},
+  ])
+
+  tray.setToolTip(isMeetingRecording ? 'VoiceOS - Meeting läuft' : 'VoiceOS')
+  tray.setContextMenu(contextMenu)
 }
 
 function registerGlobalShortcuts(): void {
@@ -201,6 +226,62 @@ function setupIpcHandlers(): void {
   // Shell - open external URLs
   ipcMain.handle('shell-open-external', async (_event, url: string) => {
     await shell.openExternal(url)
+    return true
+  })
+
+  // Meeting Recording - Power Save Blocker
+  ipcMain.handle('meeting-start-power-block', () => {
+    if (meetingPowerSaveBlockerId !== null) {
+      return meetingPowerSaveBlockerId
+    }
+    meetingPowerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+    isMeetingRecording = true
+    updateTrayMenu()
+    return meetingPowerSaveBlockerId
+  })
+
+  ipcMain.handle('meeting-stop-power-block', () => {
+    if (meetingPowerSaveBlockerId !== null) {
+      powerSaveBlocker.stop(meetingPowerSaveBlockerId)
+      meetingPowerSaveBlockerId = null
+    }
+    isMeetingRecording = false
+    updateTrayMenu()
+    return true
+  })
+
+  ipcMain.handle('meeting-is-power-block-active', () => {
+    return meetingPowerSaveBlockerId !== null && powerSaveBlocker.isStarted(meetingPowerSaveBlockerId)
+  })
+
+  // Meeting status updates
+  ipcMain.on('meeting-status-changed', (_event, status: string) => {
+    isMeetingRecording = status === 'recording' || status === 'paused'
+    updateTrayMenu()
+  })
+
+  // Meeting data persistence
+  ipcMain.handle('meeting-save', (_event, meeting: unknown) => {
+    const history = (store.get('meeting-history') || []) as unknown[]
+    history.unshift(meeting)
+    // Keep only last 50 meetings
+    store.set('meeting-history', history.slice(0, 50))
+    return true
+  })
+
+  ipcMain.handle('meeting-get-history', () => {
+    return store.get('meeting-history') || []
+  })
+
+  ipcMain.handle('meeting-delete', (_event, id: string) => {
+    const history = (store.get('meeting-history') || []) as Array<{ id: string }>
+    const filtered = history.filter(m => m.id !== id)
+    store.set('meeting-history', filtered)
+    return true
+  })
+
+  ipcMain.handle('meeting-clear-history', () => {
+    store.set('meeting-history', [])
     return true
   })
 }

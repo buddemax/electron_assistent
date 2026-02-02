@@ -9,7 +9,7 @@ import { Toggle } from '@/components/ui/toggle'
 type SettingsTab = 'general' | 'voice' | 'api' | 'appearance' | 'hotkeys'
 
 export function SettingsModal() {
-  const { isSettingsOpen, setSettingsOpen, settings, updateSettings } = useAppStore()
+  const { isSettingsOpen, setSettingsOpen, settings, updateSettings, profile, resetOnboarding } = useAppStore()
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
 
   const tabs: { id: SettingsTab; label: string }[] = [
@@ -85,7 +85,12 @@ export function SettingsModal() {
             {/* Content */}
             <div className="flex-1 p-6 overflow-auto">
               {activeTab === 'general' && (
-                <GeneralSettings settings={settings.general} onUpdate={(v) => updateSettings('general', v)} />
+                <GeneralSettings
+                  settings={settings.general}
+                  onUpdate={(v) => updateSettings('general', v)}
+                  profile={profile}
+                  onResetOnboarding={resetOnboarding}
+                />
               )}
               {activeTab === 'voice' && (
                 <VoiceSettings settings={settings.voice} onUpdate={(v) => updateSettings('voice', v)} />
@@ -113,7 +118,25 @@ interface SettingsSectionProps<T> {
   onUpdate: (value: Partial<T>) => void
 }
 
-function GeneralSettings({ settings, onUpdate }: SettingsSectionProps<typeof import('@/types/settings').DEFAULT_SETTINGS.general>) {
+interface GeneralSettingsProps extends SettingsSectionProps<typeof import('@/types/settings').DEFAULT_SETTINGS.general> {
+  profile: import('@/types/profile').UserProfile
+  onResetOnboarding: () => void
+}
+
+function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: GeneralSettingsProps) {
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+
+  const handleResetOnboarding = () => {
+    onResetOnboarding()
+    setShowResetConfirm(false)
+  }
+
+  const profileSummary = [
+    profile.jobRole,
+    profile.industry,
+    profile.signatureName,
+  ].filter(Boolean).join(', ') || 'Nicht konfiguriert'
+
   return (
     <div className="space-y-6">
       <SettingsRow
@@ -163,6 +186,47 @@ function GeneralSettings({ settings, onUpdate }: SettingsSectionProps<typeof imp
           <option value="en">English</option>
         </select>
       </SettingsRow>
+
+      {/* Profile / Onboarding Section */}
+      <div className="pt-4 border-t border-[var(--border)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Profil</p>
+            <p className="text-xs text-[var(--text-tertiary)] mt-0.5 max-w-[200px] truncate">
+              {profileSummary}
+            </p>
+          </div>
+          {showResetConfirm ? (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowResetConfirm(false)}
+              >
+                Abbrechen
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleResetOnboarding}
+              >
+                Zurücksetzen
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowResetConfirm(true)}
+            >
+              Neu einrichten
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-[var(--text-muted)] mt-2">
+          Setzt das Profil zurück und startet das Onboarding erneut.
+        </p>
+      </div>
     </div>
   )
 }

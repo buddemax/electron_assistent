@@ -3,6 +3,17 @@ import { generateOutput, detectOutputType } from '@/lib/ai/gemini-client'
 import type { ApiResponse, GenerateRequest, GenerateResponse } from '@/types/api'
 import { z } from 'zod'
 
+const profileSchema = z.object({
+  jobRole: z.string().max(100).nullable(),
+  industry: z.string().max(100).nullable(),
+  companySize: z.enum(['solo', 'small', 'medium', 'large', 'enterprise']).nullable(),
+  formalityLevel: z.enum(['casual', 'neutral', 'formal', 'very-formal']),
+  signatureName: z.string().max(100).nullable(),
+  primaryUseCase: z.enum(['emails', 'meetings', 'tasks', 'brainstorm', 'general']).nullable(),
+  technicalLevel: z.enum(['non-technical', 'some-technical', 'technical', 'expert']).nullable(),
+  preferredOutputLength: z.enum(['concise', 'balanced', 'detailed']),
+}).optional()
+
 const generateRequestSchema = z.object({
   transcription: z.string().min(1, 'Transcription is required'),
   mode: z.enum(['private', 'work']),
@@ -23,6 +34,8 @@ const generateRequestSchema = z.object({
     relevanceScore: z.number(),
   })).optional(),
   customInstructions: z.string().optional(),
+  profile: profileSchema,
+  conversationContext: z.string().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -62,14 +75,6 @@ export async function POST(request: NextRequest) {
     const data = validationResult.data
     const startTime = Date.now()
 
-    console.log('[API Generate] Request received:', {
-      transcription: data.transcription.slice(0, 50),
-      mode: data.mode,
-      hasContext: !!data.context,
-      contextLength: data.context?.length ?? 0,
-      context: data.context,
-    })
-
     const result = await generateOutput(
       {
         transcription: data.transcription,
@@ -78,6 +83,8 @@ export async function POST(request: NextRequest) {
         variant: data.variant,
         context: data.context,
         customInstructions: data.customInstructions,
+        profile: data.profile,
+        conversationContext: data.conversationContext,
       },
       apiKey
     )
@@ -102,7 +109,6 @@ export async function POST(request: NextRequest) {
         error: {
           code: 'GENERATION_FAILED',
           message: errorMessage,
-          details: error instanceof Error ? { stack: error.stack } : undefined,
         },
       },
       { status: 500 }

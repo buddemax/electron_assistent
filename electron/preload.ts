@@ -26,6 +26,16 @@ export interface ElectronAPI {
     remove: (id: string) => Promise<boolean>
     clear: () => Promise<boolean>
   }
+  meeting: {
+    startPowerBlock: () => Promise<number>
+    stopPowerBlock: () => Promise<boolean>
+    isPowerBlockActive: () => Promise<boolean>
+    updateStatus: (status: string) => void
+    save: <T>(meeting: T) => Promise<boolean>
+    getHistory: <T>() => Promise<T[]>
+    delete: (id: string) => Promise<boolean>
+    clearHistory: () => Promise<boolean>
+  }
   app: {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<NodeJS.Platform>
@@ -37,6 +47,8 @@ export interface ElectronAPI {
     hotkeySaveOnly: (callback: () => void) => () => void
     hotkeyQueryOnly: (callback: () => void) => () => void
     openSettings: (callback: () => void) => () => void
+    meetingStopRequested: (callback: () => void) => () => void
+    meetingQuitWarning: (callback: () => void) => () => void
   }
 }
 
@@ -65,6 +77,16 @@ const electronAPI: ElectronAPI = {
     update: <T>(id: string, updates: Partial<T>) => ipcRenderer.invoke('knowledge-update', id, updates) as Promise<boolean>,
     remove: (id: string) => ipcRenderer.invoke('knowledge-remove', id) as Promise<boolean>,
     clear: () => ipcRenderer.invoke('knowledge-clear') as Promise<boolean>,
+  },
+  meeting: {
+    startPowerBlock: () => ipcRenderer.invoke('meeting-start-power-block') as Promise<number>,
+    stopPowerBlock: () => ipcRenderer.invoke('meeting-stop-power-block') as Promise<boolean>,
+    isPowerBlockActive: () => ipcRenderer.invoke('meeting-is-power-block-active') as Promise<boolean>,
+    updateStatus: (status: string) => ipcRenderer.send('meeting-status-changed', status),
+    save: <T>(meeting: T) => ipcRenderer.invoke('meeting-save', meeting) as Promise<boolean>,
+    getHistory: <T>() => ipcRenderer.invoke('meeting-get-history') as Promise<T[]>,
+    delete: (id: string) => ipcRenderer.invoke('meeting-delete', id) as Promise<boolean>,
+    clearHistory: () => ipcRenderer.invoke('meeting-clear-history') as Promise<boolean>,
   },
   app: {
     getVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,
@@ -100,6 +122,16 @@ const electronAPI: ElectronAPI = {
       const handler = () => callback()
       ipcRenderer.on('open-settings', handler)
       return () => ipcRenderer.removeListener('open-settings', handler)
+    },
+    meetingStopRequested: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('meeting-stop-requested', handler)
+      return () => ipcRenderer.removeListener('meeting-stop-requested', handler)
+    },
+    meetingQuitWarning: (callback: () => void) => {
+      const handler = () => callback()
+      ipcRenderer.on('meeting-quit-warning', handler)
+      return () => ipcRenderer.removeListener('meeting-quit-warning', handler)
     },
   },
 }

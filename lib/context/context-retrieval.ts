@@ -1,6 +1,8 @@
 import type { Mode } from '@/types/output'
 import type { KnowledgeEntry, KnowledgeReference, EntityType } from '@/types/knowledge'
+import type { DocumentEntry } from '@/types/document'
 import type { Intent, IntentDetectionResult } from './intent-detector'
+import { retrieveDocumentContext } from './document-context-retrieval'
 
 export interface ContextRetrievalOptions {
   readonly query: string
@@ -182,11 +184,94 @@ export function buildContextString(
 ): string {
   if (references.length === 0) return ''
 
-  const contextLines = references.map((ref, index) =>
-    `[${index + 1}] ${ref.snippet}`
-  )
+  // Separate by source
+  const knowledgeRefs = references.filter(r => r.source !== 'files')
+  const documentRefs = references.filter(r => r.source === 'files')
 
-  return `Relevanter Kontext aus der Knowledge Base:\n${contextLines.join('\n')}`
+  const parts: string[] = []
+
+  if (knowledgeRefs.length > 0) {
+    const contextLines = knowledgeRefs.map((ref, index) =>
+      `[${index + 1}] ${ref.snippet}`
+    )
+    parts.push(`Relevanter Kontext aus der Knowledge Base:\n${contextLines.join('\n')}`)
+  }
+
+  if (documentRefs.length > 0) {
+    const docLines = documentRefs.map(ref => ref.snippet)
+    parts.push(`Relevanter Kontext aus Dokumenten:\n${docLines.join('\n\n')}`)
+  }
+
+  return parts.join('\n\n')
+}
+
+/**
+ * Combined retrieval options including documents
+ */
+export interface CombinedRetrievalOptions extends ContextRetrievalOptions {
+  readonly documents?: readonly DocumentEntry[]
+  readonly knowledgeLimit?: number
+  readonly documentLimit?: number
+}
+
+/**
+ * Combined retrieval result
+ */
+export interface CombinedRetrievalResult {
+  readonly context: readonly KnowledgeReference[]
+  readonly knowledgeMatches: number
+  readonly documentMatches: number
+  readonly matchedKeywords: readonly string[]
+  readonly matchedDocuments: readonly string[]
+}
+
+/**
+ * Retrieve context from both knowledge entries AND documents
+ */
+export function retrieveCombinedContext(
+  entries: readonly KnowledgeEntry[],
+  options: CombinedRetrievalOptions
+): CombinedRetrievalResult {
+  const {
+    documents = [],
+    knowledgeLimit = 5,
+    documentLimit = 3,
+    ...baseOptions
+  } = options
+
+  // Get knowledge context
+  const knowledgeResult = retrieveContext(entries, {
+    ...baseOptions,
+    limit: knowledgeLimit,
+  })
+
+  // Mark knowledge refs with source
+  const knowledgeRefs: KnowledgeReference[] = knowledgeResult.context.map(ref => ({
+    ...ref,
+    source: 'knowledge' as const,
+  }))
+
+  // Get document context
+  const documentResult = retrieveDocumentContext(documents, {
+    query: baseOptions.query,
+    mode: baseOptions.mode,
+    limit: documentLimit,
+    minRelevance: baseOptions.minRelevance ?? 0.1,
+  })
+
+  // Combine and sort by relevance
+  const allContext: KnowledgeReference[] = [
+    ...knowledgeRefs,
+    ...documentResult.references,
+  ].sort((a, b) => b.relevanceScore - a.relevanceScore)
+
+  return {
+    context: allContext,
+    knowledgeMatches: knowledgeResult.totalMatches,
+    documentMatches: documentResult.totalMatches,
+    matchedKeywords: knowledgeResult.matchedKeywords,
+    matchedDocuments: documentResult.matchedDocuments,
+  }
 }
 
 /**

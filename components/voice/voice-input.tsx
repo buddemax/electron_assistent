@@ -6,6 +6,8 @@ import { useVoiceStore } from '@/stores/voice-store'
 import { useAppStore } from '@/stores/app-store'
 import { useOutputStore } from '@/stores/output-store'
 import { useKnowledgeStore } from '@/stores/knowledge-store'
+import { useDocumentStore } from '@/stores/document-store'
+import { useConversationStore } from '@/stores/conversation-store'
 import { Waveform } from './waveform'
 import { getRecorder } from '@/lib/audio/recorder'
 import { createKnowledgeEntry, serializeEntry } from '@/lib/knowledge'
@@ -13,6 +15,7 @@ import { detectShortcut, isImmediateAction, getModifiedTranscription } from '@/l
 import { createDebouncedFetcher } from '@/lib/context/live-suggestions'
 import { ContextSidebar } from '@/components/context/context-sidebar'
 import type { EntityType } from '@/types/knowledge'
+import type { Conversation } from '@/types/conversation'
 
 export function VoiceInput() {
   const {
@@ -40,7 +43,7 @@ export function VoiceInput() {
   const { generateOutput } = useOutputStore()
   const { addEntry: addKnowledgeEntry } = useKnowledgeStore()
 
-  const { settings, mode, setMode } = useAppStore()
+  const { settings, mode, setMode, profile } = useAppStore()
   const [showHint, setShowHint] = useState(true)
   const [shortcutConfirmation, setShortcutConfirmation] = useState<string | null>(null)
 
@@ -242,8 +245,9 @@ export function VoiceInput() {
 
             if (extractResponse.ok) {
               const extractResult = await extractResponse.json()
+
+              // Store the full message if shouldStore is true
               if (extractResult.success && extractResult.data?.shouldStore) {
-                // Create and store knowledge entry
                 const entry = createKnowledgeEntry({
                   content: transcriptionText,
                   mode,
@@ -252,12 +256,46 @@ export function VoiceInput() {
                   source: 'voice',
                 })
 
-                // Add to store
                 addKnowledgeEntry(entry)
 
-                // Persist to Electron storage
                 if (window.electronAPI?.knowledge) {
                   const serialized = serializeEntry(entry)
+                  await window.electronAPI.knowledge.add(serialized)
+                }
+              }
+
+              // Store extracted facts as separate entries (even if shouldStore is false)
+              const extractedFacts = extractResult.data?.extractedFacts || []
+              const { entries: existingEntries } = useKnowledgeStore.getState()
+
+              for (const fact of extractedFacts) {
+                // Check if this fact already exists (avoid duplicates)
+                const factContentLower = fact.content.toLowerCase()
+                const isDuplicate = existingEntries.some(existing => {
+                  const existingLower = existing.content.toLowerCase()
+                  // Check for exact match or high similarity
+                  return existingLower === factContentLower ||
+                    existingLower.includes(factContentLower) ||
+                    factContentLower.includes(existingLower)
+                })
+
+                if (isDuplicate) {
+                  continue // Skip this fact, it's already stored
+                }
+
+                // Create a knowledge entry for each new extracted fact
+                const factEntry = createKnowledgeEntry({
+                  content: fact.content,
+                  mode,
+                  entityType: fact.entityType as EntityType | undefined,
+                  tags: [...fact.tags, fact.relatedEntity].filter(Boolean),
+                  source: 'voice',
+                })
+
+                addKnowledgeEntry(factEntry)
+
+                if (window.electronAPI?.knowledge) {
+                  const serialized = serializeEntry(factEntry)
                   await window.electronAPI.knowledge.add(serialized)
                 }
               }
@@ -270,13 +308,99 @@ export function VoiceInput() {
         // Run extraction in background, don't block output generation
         extractAndStore()
 
-        // Fetch context from knowledge base before generating
+        // Fetch context from knowledge base and documents
         const { entries } = useKnowledgeStore.getState()
+        const { documents } = useDocumentStore.getState()
         const { fetchContext } = useOutputStore.getState()
-        const contextState = await fetchContext(textForGeneration, mode, entries)
 
-        // Generate output with the transcription and context
-        await generateOutput(textForGeneration, mode, contextState.context)
+        // Handle conversation tracking (separate from context fetching to avoid errors)
+        let conversationId: string | null = null
+        try {
+          const {
+            getActiveConversation,
+            createConversation,
+            addMessage,
+            isContinuation,
+          } = useConversationStore.getState()
+
+          // Check if this is a follow-up question in an active conversation
+          const activeConversation = getActiveConversation()
+          const isFollowUp = activeConversation !== null && isContinuation(textForGeneration)
+
+          // Get or create conversation
+          let conversation: Conversation
+          if (isFollowUp && activeConversation) {
+            conversation = activeConversation
+          } else {
+            // Start a new conversation
+            conversation = createConversation(mode, textForGeneration)
+          }
+          conversationId = conversation.id
+
+          // Add user message to conversation
+          addMessage(conversation.id, {
+            role: 'user',
+            content: textForGeneration,
+            metadata: {
+              transcriptionId: result.data.transcription.id,
+            },
+          })
+
+          // Re-fetch conversation to get updated messages
+          const updatedConversation = useConversationStore.getState().getConversationById(conversation.id)
+
+          // Fetch context including conversation history
+          const contextState = await fetchContext(
+            textForGeneration,
+            mode,
+            entries,
+            documents,
+            updatedConversation
+          )
+
+          // Generate output with the transcription, context, conversation, and user profile
+          await generateOutput(
+            textForGeneration,
+            mode,
+            contextState.context,
+            profile,
+            contextState.conversationContext
+          )
+
+          // Add assistant response to conversation
+          const { currentOutput } = useOutputStore.getState()
+          if (currentOutput && conversationId) {
+            addMessage(conversationId, {
+              role: 'assistant',
+              content: currentOutput.content.body,
+              metadata: {
+                outputId: currentOutput.id,
+                usedContext: contextState.context,
+                outputType: currentOutput.type,
+              },
+            })
+          }
+        } catch (convError) {
+          // If conversation handling fails, still try to generate output without conversation context
+          console.warn('Conversation handling failed, continuing without:', convError)
+
+          const contextState = await fetchContext(
+            textForGeneration,
+            mode,
+            entries,
+            documents,
+            null
+          )
+
+          await generateOutput(
+            textForGeneration,
+            mode,
+            contextState.context,
+            profile,
+            undefined
+          )
+        }
+
         // Reset voice mode after successful generation
         setVoiceMode('idle')
       } else {
@@ -295,7 +419,7 @@ export function VoiceInput() {
     } finally {
       abortControllerRef.current = null
     }
-  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, generateOutput, mode, addKnowledgeEntry])
+  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, generateOutput, mode, addKnowledgeEntry, profile])
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {

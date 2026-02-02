@@ -1,13 +1,22 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Mode } from '@/types/output'
-import type { AppSettings, DEFAULT_SETTINGS } from '@/types/settings'
+import type { AppSettings } from '@/types/settings'
+import type { UserProfile } from '@/types/profile'
+import { DEFAULT_USER_PROFILE } from '@/types/profile'
+import { DEFAULT_MEETING_SETTINGS } from '@/types/meeting'
+
+export type AppMode = 'voice' | 'meeting'
 
 interface AppState {
   // Mode
   mode: Mode
   setMode: (mode: Mode) => void
   toggleMode: () => void
+
+  // App Mode (Voice vs Meeting)
+  appMode: AppMode
+  setAppMode: (mode: AppMode) => void
 
   // Settings
   settings: AppSettings
@@ -16,6 +25,19 @@ interface AppState {
     value: Partial<AppSettings[K]>
   ) => void
   resetSettings: () => void
+
+  // User Profile
+  profile: UserProfile
+  setProfile: (profile: UserProfile) => void
+  updateProfileField: <K extends keyof UserProfile>(
+    field: K,
+    value: UserProfile[K]
+  ) => void
+
+  // Onboarding
+  onboardingComplete: boolean
+  completeOnboarding: () => void
+  resetOnboarding: () => void
 
   // UI State
   isSettingsOpen: boolean
@@ -82,6 +104,7 @@ const defaultSettings: AppSettings = {
       enabled: true,
     },
   },
+  meeting: DEFAULT_MEETING_SETTINGS,
 }
 
 export const useAppStore = create<AppState>()(
@@ -95,23 +118,43 @@ export const useAppStore = create<AppState>()(
           mode: state.mode === 'work' ? 'private' : 'work',
         })),
 
+      // App Mode (Voice vs Meeting)
+      appMode: 'voice',
+      setAppMode: (appMode) => set({ appMode }),
+
       // Settings
       settings: defaultSettings,
-      updateSettings: (key, value) => {
-        console.log('[AppStore] updateSettings called:', key, value)
-        set((state) => {
-          const newSettings = {
+      updateSettings: (key, value) =>
+        set((state) => ({
+          settings: {
             ...state.settings,
             [key]: {
               ...state.settings[key],
               ...value,
             },
-          }
-          console.log('[AppStore] New settings:', key, newSettings[key])
-          return { settings: newSettings }
-        })
-      },
+          },
+        })),
       resetSettings: () => set({ settings: defaultSettings }),
+
+      // User Profile
+      profile: DEFAULT_USER_PROFILE,
+      setProfile: (profile) => set({ profile }),
+      updateProfileField: (field, value) =>
+        set((state) => ({
+          profile: {
+            ...state.profile,
+            [field]: value,
+          },
+        })),
+
+      // Onboarding
+      onboardingComplete: false,
+      completeOnboarding: () => set({ onboardingComplete: true }),
+      resetOnboarding: () =>
+        set({
+          onboardingComplete: false,
+          profile: DEFAULT_USER_PROFILE,
+        }),
 
       // UI State
       isSettingsOpen: false,
@@ -138,6 +181,8 @@ export const useAppStore = create<AppState>()(
         mode: state.mode,
         settings: state.settings,
         isAlwaysOnTop: state.isAlwaysOnTop,
+        profile: state.profile,
+        onboardingComplete: state.onboardingComplete,
       }),
     }
   )

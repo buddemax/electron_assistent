@@ -1,4 +1,6 @@
 import type { Mode } from './output'
+import type { MeetingSettings } from './meeting'
+import { DEFAULT_MEETING_SETTINGS } from './meeting'
 
 export interface AppSettings {
   readonly general: GeneralSettings
@@ -6,6 +8,7 @@ export interface AppSettings {
   readonly api: ApiSettings
   readonly appearance: AppearanceSettings
   readonly hotkeys: HotkeySettings
+  readonly meeting: MeetingSettings
 }
 
 export interface GeneralSettings {
@@ -106,4 +109,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
       enabled: true,
     },
   },
+  meeting: DEFAULT_MEETING_SETTINGS,
 }

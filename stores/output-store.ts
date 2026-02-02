@@ -6,11 +6,14 @@ import type {
   Mode,
 } from '@/types/output'
 import type { KnowledgeReference } from '@/types/knowledge'
+import type { UserProfile } from '@/types/profile'
 import type { Intent } from '@/lib/context/intent-detector'
+import type { Conversation } from '@/types/conversation'
 
 interface ContextState {
   context: readonly KnowledgeReference[]
   intent: Intent | null
+  conversationContext?: string
 }
 
 interface OutputState {
@@ -50,8 +53,8 @@ interface OutputState {
   addToHistory: (output: GeneratedOutput) => void
   clearHistory: () => void
   reset: () => void
-  generateOutput: (transcription: string, mode?: Mode, context?: readonly KnowledgeReference[]) => Promise<void>
-  fetchContext: (query: string, mode: Mode, entries: readonly import('@/types/knowledge').KnowledgeEntry[]) => Promise<ContextState>
+  generateOutput: (transcription: string, mode?: Mode, context?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string) => Promise<void>
+  fetchContext: (query: string, mode: Mode, entries: readonly import('@/types/knowledge').KnowledgeEntry[], documents?: readonly import('@/types/document').DocumentEntry[], conversation?: Conversation | null) => Promise<ContextState>
   cancelGeneration: () => void
 }
 
@@ -133,7 +136,9 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
   fetchContext: async (
     query: string,
     mode: Mode,
-    entries: readonly import('@/types/knowledge').KnowledgeEntry[]
+    entries: readonly import('@/types/knowledge').KnowledgeEntry[],
+    documents: readonly import('@/types/document').DocumentEntry[] = [],
+    conversation: Conversation | null = null
   ) => {
     // Import context functions dynamically to avoid circular dependencies
     const { detectIntent, requiresContextRetrieval } = await import('@/lib/context/intent-detector')
@@ -141,40 +146,50 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
 
     const intentResult = detectIntent(query)
 
-    if (!requiresContextRetrieval(intentResult.intent)) {
+    // For follow-up questions in a conversation, we may still want context
+    const hasActiveConversation = conversation && conversation.messages.length > 0
+
+    if (!requiresContextRetrieval(intentResult.intent) && !hasActiveConversation) {
       return {
         context: [],
         intent: intentResult.intent,
+        conversationContext: undefined,
       }
     }
 
-    // Use unified context assembly to fetch from knowledge base
+    // Use unified context assembly to fetch from knowledge base, documents, AND conversation
     const result = await assembleContext(
       {
         query,
         mode,
         intent: intentResult.intent,
-        limit: 5,
+        knowledgeLimit: 5,
+        documentLimit: 3,
+        conversation,
       },
-      entries
+      entries,
+      documents
     )
 
     const contextState: ContextState = {
       context: result.references,
       intent: intentResult.intent,
+      conversationContext: result.conversationContext,
     }
 
     set({ contextState })
     return contextState
   },
 
-  generateOutput: async (transcription: string, mode: Mode = 'work', providedContext?: readonly KnowledgeReference[]) => {
+  generateOutput: async (transcription: string, mode: Mode = 'work', providedContext?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string) => {
     const abortController = new AbortController()
     set({ isGenerating: true, generationProgress: 0, abortController })
 
     try {
       // Use provided context or context from state
       const context = providedContext ?? get().contextState.context
+      // Use provided conversation context or from state
+      const convContext = conversationContext ?? get().contextState.conversationContext
 
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -184,6 +199,8 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
           mode,
           variant: get().selectedVariant,
           context: context.length > 0 ? context : undefined,
+          profile,
+          conversationContext: convContext,
         }),
         signal: abortController.signal,
       })
