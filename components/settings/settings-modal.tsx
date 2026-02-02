@@ -1,15 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/stores/app-store'
 import { Button } from '@/components/ui/button'
 import { Toggle } from '@/components/ui/toggle'
+import { getQuestionsProgress } from '@/lib/daily-questions'
 
 type SettingsTab = 'general' | 'voice' | 'api' | 'integrations' | 'appearance' | 'hotkeys'
 
 export function SettingsModal() {
-  const { isSettingsOpen, setSettingsOpen, settings, updateSettings, profile, resetOnboarding } = useAppStore()
+  const { isSettingsOpen, setSettingsOpen, settings, updateSettings, profile, resetOnboarding, dailyQuestions, setDailyQuestionsEnabled } = useAppStore()
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
 
   const tabs: { id: SettingsTab; label: string }[] = [
@@ -91,6 +92,9 @@ export function SettingsModal() {
                   onUpdate={(v) => updateSettings('general', v)}
                   profile={profile}
                   onResetOnboarding={resetOnboarding}
+                  dailyQuestionsEnabled={dailyQuestions.enabled}
+                  onDailyQuestionsEnabledChange={setDailyQuestionsEnabled}
+                  answeredQuestionIds={dailyQuestions.askedQuestionIds}
                 />
               )}
               {activeTab === 'voice' && (
@@ -125,11 +129,20 @@ interface SettingsSectionProps<T> {
 interface GeneralSettingsProps extends SettingsSectionProps<typeof import('@/types/settings').DEFAULT_SETTINGS.general> {
   profile: import('@/types/profile').UserProfile
   onResetOnboarding: () => void
+  dailyQuestionsEnabled: boolean
+  onDailyQuestionsEnabledChange: (enabled: boolean) => void
+  answeredQuestionIds: readonly string[]
 }
 
-function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: GeneralSettingsProps) {
+function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding, dailyQuestionsEnabled, onDailyQuestionsEnabledChange, answeredQuestionIds }: GeneralSettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const { updateProfileField } = useAppStore()
+
+  // Get daily questions progress
+  const questionsProgress = useMemo(
+    () => getQuestionsProgress(answeredQuestionIds),
+    [answeredQuestionIds]
+  )
 
   const handleResetOnboarding = () => {
     onResetOnboarding()
@@ -192,6 +205,40 @@ function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: Gen
           <option value="en">English</option>
         </select>
       </SettingsRow>
+
+      {/* Daily Questions Section */}
+      <div className="pt-4 border-t border-[var(--border)]">
+        <SettingsRow
+          label="Tägliche Fragen"
+          description="Lerne mich durch kurze Fragen besser kennen"
+        >
+          <Toggle
+            checked={dailyQuestionsEnabled}
+            onChange={onDailyQuestionsEnabledChange}
+          />
+        </SettingsRow>
+
+        {/* Progress indicator */}
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-[var(--text-tertiary)]">Fortschritt</span>
+            <span className="text-[var(--text-secondary)]">
+              {questionsProgress.answered} von {questionsProgress.total} beantwortet
+            </span>
+          </div>
+          <div className="h-1.5 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[var(--accent)] transition-all duration-300"
+              style={{ width: `${questionsProgress.percentage}%` }}
+            />
+          </div>
+          {questionsProgress.percentage === 100 && (
+            <p className="text-xs text-[var(--accent)] mt-1.5">
+              Alle Fragen beantwortet
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Profile / Onboarding Section */}
       <div className="pt-4 border-t border-[var(--border)]">

@@ -4,6 +4,8 @@ import type {
   TechnicalLevel,
   OutputLength,
 } from '@/types/profile'
+import type { QuestionAnswer, QuestionCategory } from '@/types/daily-questions'
+import { getQuestionById } from '@/lib/daily-questions/question-pool'
 
 const FORMALITY_DESCRIPTIONS: Record<FormalityLevel, string> = {
   casual: 'Verwende die Du-Form und einen lockeren, freundlichen Ton.',
@@ -97,4 +99,77 @@ export function hasProfileData(profile: UserProfile): boolean {
     profile.formalityLevel !== 'neutral' ||
     profile.preferredOutputLength !== 'balanced'
   )
+}
+
+/**
+ * Category labels for AI context
+ */
+const CATEGORY_LABELS: Record<QuestionCategory, string> = {
+  personal: 'Persönliches',
+  career: 'Beruf',
+  goals: 'Ziele & Träume',
+  preferences: 'Präferenzen',
+  hobbies: 'Hobbys & Freizeit',
+  communication: 'Kommunikation',
+  productivity: 'Produktivität',
+}
+
+/**
+ * Build insights context from daily questions answers
+ */
+export function buildInsightsContext(
+  answers: readonly QuestionAnswer[]
+): string {
+  if (answers.length === 0) {
+    return ''
+  }
+
+  // Group answers by category
+  const groupedAnswers = new Map<QuestionCategory, string[]>()
+
+  for (const answer of answers) {
+    const question = getQuestionById(answer.questionId)
+    if (!question) continue
+
+    const category = question.category
+    const answerText = Array.isArray(answer.answer)
+      ? answer.answer.join(', ')
+      : answer.answer
+
+    if (!groupedAnswers.has(category)) {
+      groupedAnswers.set(category, [])
+    }
+
+    groupedAnswers.get(category)?.push(`${question.aiContextKey}: ${answerText}`)
+  }
+
+  // Build context string
+  const parts: string[] = []
+
+  for (const [category, categoryAnswers] of groupedAnswers) {
+    const label = CATEGORY_LABELS[category]
+    parts.push(`${label}:`)
+    for (const answer of categoryAnswers) {
+      parts.push(`  - ${answer}`)
+    }
+  }
+
+  if (parts.length === 0) {
+    return ''
+  }
+
+  return `\n\nZusätzliche Nutzer-Insights:\n${parts.join('\n')}`
+}
+
+/**
+ * Build full profile context including daily questions answers
+ */
+export function buildFullProfileContext(
+  profile: UserProfile,
+  answers: readonly QuestionAnswer[]
+): string {
+  const profileContext = buildProfileContext(profile)
+  const insightsContext = buildInsightsContext(answers)
+
+  return profileContext + insightsContext
 }

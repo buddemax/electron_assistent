@@ -7,7 +7,6 @@ export type OutputType =
   | 'question'
   | 'brainstorm'
   | 'summary'
-  | 'code'
   | 'calendar'
   | 'note'
   | 'general'
@@ -102,20 +101,6 @@ export interface MeetingNoteContent extends OutputContent {
   }
 }
 
-// Code output
-export interface CodeOutput extends GeneratedOutput {
-  readonly type: 'code'
-  readonly content: CodeContent
-}
-
-export interface CodeContent extends OutputContent {
-  readonly structured: {
-    readonly language: string
-    readonly code: string
-    readonly explanation: string
-  }
-}
-
 // Brainstorm output
 export interface BrainstormOutput extends GeneratedOutput {
   readonly type: 'brainstorm'
@@ -194,7 +179,6 @@ export type AnyOutput =
   | EmailOutput
   | TodoOutput
   | MeetingNoteOutput
-  | CodeOutput
   | BrainstormOutput
   | SummaryOutput
   | QuestionOutput

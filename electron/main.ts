@@ -566,6 +566,95 @@ end tell
     }
   })
 
+  // ==================== APPLE NOTES ====================
+
+  // Create note in Apple Notes
+  ipcMain.handle('notes-create-note', async (_event, noteData: {
+    title: string
+    body: string
+    folderName?: string
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Notes integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const escapeForAppleScript = (str: string): string => {
+        return str
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+      }
+
+      const title = escapeForAppleScript(noteData.title)
+      const body = escapeForAppleScript(noteData.body)
+      const folderName = noteData.folderName ? escapeForAppleScript(noteData.folderName) : null
+
+      // Build folder selection - use specified name or fall back to default folder
+      const folderSelection = folderName
+        ? `set targetFolder to first folder whose name is "${folderName}"`
+        : `set targetFolder to default folder`
+
+      // Apple Notes uses HTML for the body content
+      const htmlBody = `<h1>${title}</h1><br>${body.replace(/\\n/g, '<br>')}`
+
+      const appleScript = `
+tell application "Notes"
+  activate
+  tell default account
+    ${folderSelection}
+    tell targetFolder
+      make new note with properties {name:"${title}", body:"${htmlBody}"}
+    end tell
+  end tell
+  return "success"
+end tell
+`
+
+      await execAsync(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`)
+      return { success: true }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Notes create note error:', errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // Get available notes folders
+  ipcMain.handle('notes-get-folders', async (): Promise<{ success: boolean; folders?: string[]; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Notes integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const appleScript = `
+tell application "Notes"
+  tell default account
+    set folderNames to {}
+    repeat with notesFolder in folders
+      set end of folderNames to name of notesFolder
+    end repeat
+    return folderNames
+  end tell
+end tell
+`
+      const { stdout } = await execAsync(`osascript -e '${appleScript}'`)
+      const folders = stdout.trim().split(', ').filter(Boolean)
+      return { success: true, folders }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      return { success: false, error: errorMessage }
+    }
+  })
+
   // ==================== MICROSOFT TO DO ====================
 
   // Open Microsoft To Do app (native)

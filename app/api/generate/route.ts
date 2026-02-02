@@ -14,6 +14,12 @@ const profileSchema = z.object({
   preferredOutputLength: z.enum(['concise', 'balanced', 'detailed']),
 }).optional()
 
+const questionAnswerSchema = z.object({
+  questionId: z.string(),
+  answer: z.union([z.string(), z.array(z.string())]),
+  answeredAt: z.string().transform((val) => new Date(val)),
+})
+
 const generateRequestSchema = z.object({
   transcription: z.string().min(1, 'Transcription is required'),
   mode: z.enum(['private', 'work']),
@@ -21,10 +27,11 @@ const generateRequestSchema = z.object({
     'email',
     'meeting-note',
     'todo',
+    'note',
     'question',
     'brainstorm',
     'summary',
-    'code',
+    'calendar',
     'general',
   ]).optional(),
   variant: z.enum(['short', 'standard', 'detailed']).default('standard'),
@@ -36,6 +43,7 @@ const generateRequestSchema = z.object({
   customInstructions: z.string().optional(),
   profile: profileSchema,
   conversationContext: z.string().optional(),
+  dailyQuestionsAnswers: z.array(questionAnswerSchema).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -85,6 +93,7 @@ export async function POST(request: NextRequest) {
         customInstructions: data.customInstructions,
         profile: data.profile,
         conversationContext: data.conversationContext,
+        dailyQuestionsAnswers: data.dailyQuestionsAnswers,
       },
       apiKey
     )

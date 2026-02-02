@@ -24,8 +24,6 @@ export type {
   TodoItem,
   MeetingNoteOutput,
   MeetingNoteContent,
-  CodeOutput,
-  CodeContent,
   BrainstormOutput,
   BrainstormContent,
   BrainstormIdea,
@@ -77,6 +75,22 @@ export type {
 } from './settings'
 
 export { DEFAULT_SETTINGS } from './settings'
+
+// Daily Questions types
+export type {
+  QuestionCategory,
+  QuestionInputType,
+  DailyQuestion,
+  QuestionAnswer,
+  SerializedQuestionAnswer,
+  DailyQuestionsState,
+} from './daily-questions'
+
+export {
+  DEFAULT_DAILY_QUESTIONS_STATE,
+  serializeAnswers,
+  deserializeAnswers,
+} from './daily-questions'
 
 // API types (excluding KnowledgeSearchResult which is exported from knowledge)
 export type {

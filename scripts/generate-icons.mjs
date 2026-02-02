@@ -31,14 +31,38 @@ for (const dir of [buildDir, iconsDir, iconsetDir]) {
 }
 
 /**
- * Create a rounded icon (macOS style)
+ * Crop the center of the image to remove excess whitespace
+ * The original has too much padding - we extract the center portion
  */
-async function createRoundedIcon(inputPath, outputPath, size) {
+async function getCroppedSource(inputPath) {
+  const metadata = await sharp(inputPath).metadata()
+  const { width, height } = metadata
+
+  // Crop to remove ~25% padding on each side (extract center 50% -> 60%)
+  // This makes the VO much larger in the final icon
+  const cropSize = Math.min(width, height) * 0.55
+  const left = Math.floor((width - cropSize) / 2)
+  const top = Math.floor((height - cropSize) / 2)
+
+  return sharp(inputPath)
+    .extract({
+      left,
+      top,
+      width: Math.floor(cropSize),
+      height: Math.floor(cropSize)
+    })
+    .toBuffer()
+}
+
+/**
+ * Create icon with rounded corners (macOS style)
+ */
+async function createRoundedIcon(inputBuffer, outputPath, size) {
   const roundedCorners = Buffer.from(
-    `<svg><rect x="0" y="0" width="${size}" height="${size}" rx="${size * 0.225}" ry="${size * 0.225}"/></svg>`
+    `<svg><rect x="0" y="0" width="${size}" height="${size}" rx="${size * 0.18}" ry="${size * 0.18}"/></svg>`
   )
 
-  await sharp(inputPath)
+  await sharp(inputBuffer)
     .resize(size, size, { fit: 'cover' })
     .composite([{
       input: roundedCorners,
@@ -51,12 +75,16 @@ async function createRoundedIcon(inputPath, outputPath, size) {
 async function generateIcons() {
   console.log('Generating icons from original design...')
   console.log('Source:', sourceImage)
+  console.log('Cropping to remove excess whitespace...')
+
+  // Get cropped source
+  const croppedBuffer = await getCroppedSource(sourceImage)
 
   // Generate PNGs for each size (rounded for macOS style)
   for (const size of sizes) {
     const outputPath = join(iconsDir, `${size}x${size}.png`)
-    await createRoundedIcon(sourceImage, outputPath, size)
-    console.log(`  Created ${size}x${size}.png (rounded)`)
+    await createRoundedIcon(croppedBuffer, outputPath, size)
+    console.log(`  Created ${size}x${size}.png`)
   }
 
   // Create macOS iconset (rounded)
@@ -74,46 +102,48 @@ async function generateIcons() {
   ]
 
   for (const { size, name } of iconsetSizes) {
-    await createRoundedIcon(sourceImage, join(iconsetDir, name), size)
+    await createRoundedIcon(croppedBuffer, join(iconsetDir, name), size)
   }
-  console.log('  Created macOS iconset (rounded)')
+  console.log('  Created macOS iconset')
 
-  // Create main icon.png (512x512) for build folder (rounded)
-  await createRoundedIcon(sourceImage, join(buildDir, 'icon.png'), 512)
-  console.log('  Created build/icon.png (rounded)')
+  // Create main icon.png (512x512) for build folder
+  await createRoundedIcon(croppedBuffer, join(buildDir, 'icon.png'), 512)
+  console.log('  Created build/icon.png')
 
-  // Create favicon (32x32 PNG for web) - square for web
-  await sharp(sourceImage)
-    .resize(32, 32, { fit: 'contain', background: { r: 250, g: 248, b: 245, alpha: 1 } })
+  // Create favicon (32x32 PNG for web)
+  await sharp(croppedBuffer)
+    .resize(32, 32, { fit: 'cover' })
     .png()
     .toFile(join(publicDir, 'favicon.png'))
   console.log('  Created public/favicon.png')
 
   // Create apple-touch-icon (180x180) - rounded
-  await createRoundedIcon(sourceImage, join(publicDir, 'apple-touch-icon.png'), 180)
-  console.log('  Created public/apple-touch-icon.png (rounded)')
+  await createRoundedIcon(croppedBuffer, join(publicDir, 'apple-touch-icon.png'), 180)
+  console.log('  Created public/apple-touch-icon.png')
 
-  // Create favicon-16x16 and favicon-32x32 - square for web
-  await sharp(sourceImage)
-    .resize(16, 16, { fit: 'contain', background: { r: 250, g: 248, b: 245, alpha: 1 } })
+  // Create favicon-16x16 and favicon-32x32
+  await sharp(croppedBuffer)
+    .resize(16, 16, { fit: 'cover' })
     .png()
     .toFile(join(publicDir, 'favicon-16x16.png'))
   console.log('  Created public/favicon-16x16.png')
 
-  await sharp(sourceImage)
-    .resize(32, 32, { fit: 'contain', background: { r: 250, g: 248, b: 245, alpha: 1 } })
+  await sharp(croppedBuffer)
+    .resize(32, 32, { fit: 'cover' })
     .png()
     .toFile(join(publicDir, 'favicon-32x32.png'))
   console.log('  Created public/favicon-32x32.png')
 
   // Create android icons - rounded
-  await createRoundedIcon(sourceImage, join(publicDir, 'android-chrome-192x192.png'), 192)
-  console.log('  Created public/android-chrome-192x192.png (rounded)')
+  await createRoundedIcon(croppedBuffer, join(publicDir, 'android-chrome-192x192.png'), 192)
+  console.log('  Created public/android-chrome-192x192.png')
 
-  await createRoundedIcon(sourceImage, join(publicDir, 'android-chrome-512x512.png'), 512)
-  console.log('  Created public/android-chrome-512x512.png (rounded)')
+  await createRoundedIcon(croppedBuffer, join(publicDir, 'android-chrome-512x512.png'), 512)
+  console.log('  Created public/android-chrome-512x512.png')
 
   console.log('\nIcon generation complete!')
+  console.log('\nTo create .icns file for macOS, run:')
+  console.log('  iconutil -c icns build/icon.iconset -o build/icon.icns')
 }
 
 generateIcons().catch(console.error)

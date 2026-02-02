@@ -10,6 +10,8 @@ import { SettingsModal } from '@/components/settings'
 import { KnowledgePanel } from '@/components/knowledge'
 import { OnboardingWizard } from '@/components/onboarding'
 import { MeetingModeView } from '@/components/meeting'
+import { DailyQuestionsModal } from '@/components/daily-questions'
+import { useDailyQuestions } from '@/lib/daily-questions'
 import { useVoiceStore } from '@/stores/voice-store'
 import { useOutputStore } from '@/stores/output-store'
 import { useAppStore, type AppMode } from '@/stores/app-store'
@@ -27,11 +29,26 @@ export default function Home() {
     onboardingComplete,
     setProfile,
     completeOnboarding,
+    setSettingsOpen,
   } = useAppStore()
   const { status: meetingStatus, stopMeeting } = useMeetingStore()
   const activeConversation = useConversationStore(selectActiveConversation)
   const hasConversationHistory = activeConversation && activeConversation.messages.length > 0
   const [isHistoryVisible, setIsHistoryVisible] = useState(false)
+
+  // Daily Questions
+  const {
+    shouldShow: showDailyQuestions,
+    questions: dailyQuestions,
+    currentQuestionIndex,
+    onAnswer: handleDailyQuestionAnswer,
+    onDismiss: handleDailyQuestionsDismiss,
+    onComplete: handleDailyQuestionsComplete,
+  } = useDailyQuestions()
+
+  const handleOpenSettingsFromQuestions = useCallback(() => {
+    setSettingsOpen(true)
+  }, [setSettingsOpen])
 
   const handleOnboardingComplete = useCallback(
     (profile: UserProfile) => {
@@ -78,6 +95,18 @@ export default function Home() {
   return (
     <AppShell>
       <SettingsModal />
+      <AnimatePresence>
+        {showDailyQuestions && dailyQuestions.length > 0 && (
+          <DailyQuestionsModal
+            questions={dailyQuestions}
+            currentIndex={currentQuestionIndex}
+            onAnswer={handleDailyQuestionAnswer}
+            onDismiss={handleDailyQuestionsDismiss}
+            onComplete={handleDailyQuestionsComplete}
+            onOpenSettings={handleOpenSettingsFromQuestions}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {isKnowledgePanelOpen && (
           <KnowledgePanel onClose={() => setKnowledgePanelOpen(false)} />

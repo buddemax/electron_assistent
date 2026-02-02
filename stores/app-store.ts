@@ -5,6 +5,16 @@ import type { AppSettings } from '@/types/settings'
 import type { UserProfile } from '@/types/profile'
 import { DEFAULT_USER_PROFILE } from '@/types/profile'
 import { DEFAULT_MEETING_SETTINGS } from '@/types/meeting'
+import type {
+  DailyQuestionsState,
+  QuestionAnswer,
+  SerializedQuestionAnswer,
+} from '@/types/daily-questions'
+import {
+  DEFAULT_DAILY_QUESTIONS_STATE,
+  serializeAnswers,
+  deserializeAnswers,
+} from '@/types/daily-questions'
 
 export type AppMode = 'voice' | 'meeting'
 
@@ -38,6 +48,14 @@ interface AppState {
   onboardingComplete: boolean
   completeOnboarding: () => void
   resetOnboarding: () => void
+
+  // Daily Questions
+  dailyQuestions: DailyQuestionsState
+  setDailyQuestionsEnabled: (enabled: boolean) => void
+  addQuestionAnswer: (answer: QuestionAnswer) => void
+  dismissDailyQuestions: () => void
+  setSessionQuestions: (questionIds: readonly string[]) => void
+  resetDailyQuestionsSession: () => void
 
   // UI State
   isSettingsOpen: boolean
@@ -156,6 +174,53 @@ export const useAppStore = create<AppState>()(
           profile: DEFAULT_USER_PROFILE,
         }),
 
+      // Daily Questions
+      dailyQuestions: DEFAULT_DAILY_QUESTIONS_STATE,
+      setDailyQuestionsEnabled: (enabled) =>
+        set((state) => ({
+          dailyQuestions: {
+            ...state.dailyQuestions,
+            enabled,
+          },
+        })),
+      addQuestionAnswer: (answer) =>
+        set((state) => ({
+          dailyQuestions: {
+            ...state.dailyQuestions,
+            answers: [...state.dailyQuestions.answers, answer],
+            askedQuestionIds: state.dailyQuestions.askedQuestionIds.includes(
+              answer.questionId
+            )
+              ? state.dailyQuestions.askedQuestionIds
+              : [...state.dailyQuestions.askedQuestionIds, answer.questionId],
+          },
+        })),
+      dismissDailyQuestions: () =>
+        set((state) => ({
+          dailyQuestions: {
+            ...state.dailyQuestions,
+            dismissed: true,
+            lastSessionDate: new Date().toISOString().split('T')[0],
+          },
+        })),
+      setSessionQuestions: (questionIds) =>
+        set((state) => ({
+          dailyQuestions: {
+            ...state.dailyQuestions,
+            currentSessionQuestionIds: questionIds,
+            lastSessionDate: new Date().toISOString().split('T')[0],
+            dismissed: false,
+          },
+        })),
+      resetDailyQuestionsSession: () =>
+        set((state) => ({
+          dailyQuestions: {
+            ...state.dailyQuestions,
+            currentSessionQuestionIds: [],
+            dismissed: false,
+          },
+        })),
+
       // UI State
       isSettingsOpen: false,
       setSettingsOpen: (open) => set({ isSettingsOpen: open }),
@@ -183,7 +248,28 @@ export const useAppStore = create<AppState>()(
         isAlwaysOnTop: state.isAlwaysOnTop,
         profile: state.profile,
         onboardingComplete: state.onboardingComplete,
+        dailyQuestions: {
+          ...state.dailyQuestions,
+          answers: serializeAnswers(state.dailyQuestions.answers),
+        },
       }),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AppState> & {
+          dailyQuestions?: DailyQuestionsState & {
+            answers: readonly SerializedQuestionAnswer[]
+          }
+        }
+        return {
+          ...currentState,
+          ...persisted,
+          dailyQuestions: persisted.dailyQuestions
+            ? {
+                ...persisted.dailyQuestions,
+                answers: deserializeAnswers(persisted.dailyQuestions.answers),
+              }
+            : currentState.dailyQuestions,
+        }
+      },
     }
   )
 )

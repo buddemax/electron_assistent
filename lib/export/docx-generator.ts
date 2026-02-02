@@ -17,13 +17,9 @@ import {
   Header,
   Footer,
   PageNumber,
-  NumberFormat,
   Packer,
-  TableOfContents,
-  ShadingType,
   convertInchesToTwip,
   LevelFormat,
-  UnderlineType,
 } from 'docx'
 import { saveAs } from 'file-saver'
 import type { Meeting, TranscriptionSegment, Speaker } from '@/types/meeting'
@@ -53,31 +49,21 @@ export interface DocxGeneratorEvents {
 const COLORS = {
   // Primary warm gold/amber - matching app accent
   primary: 'B8885C', // Warm gold
-  primaryDark: 'A07548', // Darker gold
   primaryLight: 'D4A574', // Light gold
 
-  // Neutral warm tones
+  // Neutral warm tones for text
   text: '2C2825', // Warm dark for main text
   textSecondary: '5C5650', // Secondary text
   textMuted: '8A847C', // Muted/tertiary text
   textLight: 'C4BFB8', // Very light text
 
-  // Backgrounds
-  bgPrimary: 'FAF8F5', // Warm cream white
-  bgSecondary: 'F3EFE9', // Slightly darker cream
-  bgElevated: 'FFFFFF', // Pure white for elevated sections
-  bgAccent: 'FBF7F2', // Very subtle warm tint
-
   // Status colors - warm palette
   success: '7CB97A', // Soft green
-  successBg: 'F0F7F0', // Very light green
   warning: 'E5A84B', // Warm amber
-  warningBg: 'FDF8EF', // Very light amber
   error: 'D97667', // Warm red
 
   // Borders and dividers
   border: 'E8E4DE', // Warm light border
-  borderSubtle: 'F0ECE6', // Very subtle border
   borderAccent: 'D4A574', // Accent border
 }
 
@@ -210,7 +196,7 @@ function createSubtleDivider(): Paragraph {
   return new Paragraph({
     border: {
       bottom: {
-        color: COLORS.borderSubtle,
+        color: COLORS.border,
         space: 1,
         size: 4,
         style: BorderStyle.SINGLE,
@@ -291,14 +277,13 @@ function createInfoTable(rows: readonly { label: string; value: string }[]): Tab
 }
 
 /**
- * Create premium participants table with elegant borders
+ * Create premium participants table with elegant borders (white background)
  */
 function createParticipantsTable(participants: readonly ExportParticipant[]): Table {
   const headerRow = new TableRow({
     tableHeader: true,
     children: [
       new TableCell({
-        shading: { fill: COLORS.bgSecondary, type: ShadingType.SOLID },
         margins: {
           top: convertInchesToTwip(0.12),
           bottom: convertInchesToTwip(0.12),
@@ -306,6 +291,9 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
           right: convertInchesToTwip(0.15),
         },
         borders: {
+          top: { style: BorderStyle.NONE },
+          left: { style: BorderStyle.NONE },
+          right: { style: BorderStyle.NONE },
           bottom: { color: COLORS.primary, size: 12, style: BorderStyle.SINGLE },
         },
         children: [
@@ -324,7 +312,6 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
         ],
       }),
       new TableCell({
-        shading: { fill: COLORS.bgSecondary, type: ShadingType.SOLID },
         margins: {
           top: convertInchesToTwip(0.12),
           bottom: convertInchesToTwip(0.12),
@@ -332,6 +319,9 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
           right: convertInchesToTwip(0.15),
         },
         borders: {
+          top: { style: BorderStyle.NONE },
+          left: { style: BorderStyle.NONE },
+          right: { style: BorderStyle.NONE },
           bottom: { color: COLORS.primary, size: 12, style: BorderStyle.SINGLE },
         },
         children: [
@@ -353,11 +343,10 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
   })
 
   const dataRows = participants.map(
-    (participant, index) =>
+    (participant) =>
       new TableRow({
         children: [
           new TableCell({
-            shading: { fill: index % 2 === 0 ? COLORS.bgElevated : COLORS.bgAccent, type: ShadingType.SOLID },
             margins: {
               top: convertInchesToTwip(0.1),
               bottom: convertInchesToTwip(0.1),
@@ -365,7 +354,10 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
               right: convertInchesToTwip(0.15),
             },
             borders: {
-              bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE },
+              top: { style: BorderStyle.NONE },
+              left: { style: BorderStyle.NONE },
+              right: { style: BorderStyle.NONE },
+              bottom: { color: COLORS.border, size: 4, style: BorderStyle.SINGLE },
             },
             children: [
               new Paragraph({
@@ -390,7 +382,6 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
             ],
           }),
           new TableCell({
-            shading: { fill: index % 2 === 0 ? COLORS.bgElevated : COLORS.bgAccent, type: ShadingType.SOLID },
             margins: {
               top: convertInchesToTwip(0.1),
               bottom: convertInchesToTwip(0.1),
@@ -398,7 +389,10 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
               right: convertInchesToTwip(0.15),
             },
             borders: {
-              bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE },
+              top: { style: BorderStyle.NONE },
+              left: { style: BorderStyle.NONE },
+              right: { style: BorderStyle.NONE },
+              bottom: { color: COLORS.border, size: 4, style: BorderStyle.SINGLE },
             },
             children: [
               new Paragraph({
@@ -425,6 +419,7 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
       left: { style: BorderStyle.NONE },
       right: { style: BorderStyle.NONE },
       insideVertical: { style: BorderStyle.NONE },
+      insideHorizontal: { style: BorderStyle.NONE },
     },
     rows: [headerRow, ...dataRows],
   })
@@ -433,19 +428,19 @@ function createParticipantsTable(participants: readonly ExportParticipant[]): Ta
 /**
  * Get priority styling
  */
-function getPriorityStyle(priority?: string): { color: string; bg: string; label: string } {
+function getPriorityStyle(priority?: string): { color: string; label: string } {
   switch (priority?.toLowerCase()) {
     case 'high':
     case 'hoch':
-      return { color: COLORS.error, bg: 'FDF2F0', label: '● Hoch' }
+      return { color: COLORS.error, label: '● Hoch' }
     case 'medium':
     case 'mittel':
-      return { color: COLORS.warning, bg: COLORS.warningBg, label: '● Mittel' }
+      return { color: COLORS.warning, label: '● Mittel' }
     case 'low':
     case 'niedrig':
-      return { color: COLORS.success, bg: COLORS.successBg, label: '● Niedrig' }
+      return { color: COLORS.success, label: '● Niedrig' }
     default:
-      return { color: COLORS.textMuted, bg: COLORS.bgSecondary, label: '—' }
+      return { color: COLORS.textMuted, label: '—' }
   }
 }
 
@@ -455,7 +450,6 @@ function getPriorityStyle(priority?: string): { color: string; bg: string; label
 function createActionItemsTable(
   actionItems: readonly { task: string; assignee?: string; dueDate?: string; priority?: string }[]
 ): Table {
-  const headerCellShading = { fill: COLORS.bgSecondary, type: ShadingType.SOLID }
   const headerCellMargins = {
     top: convertInchesToTwip(0.12),
     bottom: convertInchesToTwip(0.12),
@@ -463,6 +457,9 @@ function createActionItemsTable(
     right: convertInchesToTwip(0.12),
   }
   const headerCellBorders = {
+    top: { style: BorderStyle.NONE },
+    left: { style: BorderStyle.NONE },
+    right: { style: BorderStyle.NONE },
     bottom: { color: COLORS.primary, size: 12, style: BorderStyle.SINGLE },
   }
 
@@ -470,7 +467,6 @@ function createActionItemsTable(
     tableHeader: true,
     children: [
       new TableCell({
-        shading: headerCellShading,
         margins: headerCellMargins,
         borders: headerCellBorders,
         width: { size: 45, type: WidthType.PERCENTAGE },
@@ -490,7 +486,6 @@ function createActionItemsTable(
         ],
       }),
       new TableCell({
-        shading: headerCellShading,
         margins: headerCellMargins,
         borders: headerCellBorders,
         width: { size: 22, type: WidthType.PERCENTAGE },
@@ -510,7 +505,6 @@ function createActionItemsTable(
         ],
       }),
       new TableCell({
-        shading: headerCellShading,
         margins: headerCellMargins,
         borders: headerCellBorders,
         width: { size: 18, type: WidthType.PERCENTAGE },
@@ -530,7 +524,6 @@ function createActionItemsTable(
         ],
       }),
       new TableCell({
-        shading: headerCellShading,
         margins: headerCellMargins,
         borders: headerCellBorders,
         width: { size: 15, type: WidthType.PERCENTAGE },
@@ -552,21 +545,26 @@ function createActionItemsTable(
     ],
   })
 
-  const dataRows = actionItems.map((item, index) => {
+  const dataCellBorders = {
+    top: { style: BorderStyle.NONE },
+    left: { style: BorderStyle.NONE },
+    right: { style: BorderStyle.NONE },
+    bottom: { color: COLORS.border, size: 4, style: BorderStyle.SINGLE },
+  }
+
+  const dataRows = actionItems.map((item) => {
     const priorityStyle = getPriorityStyle(item.priority)
-    const rowBg = index % 2 === 0 ? COLORS.bgElevated : COLORS.bgAccent
 
     return new TableRow({
       children: [
         new TableCell({
-          shading: { fill: rowBg, type: ShadingType.SOLID },
           margins: {
             top: convertInchesToTwip(0.1),
             bottom: convertInchesToTwip(0.1),
             left: convertInchesToTwip(0.12),
             right: convertInchesToTwip(0.12),
           },
-          borders: { bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE } },
+          borders: dataCellBorders,
           children: [
             new Paragraph({
               children: [
@@ -586,14 +584,13 @@ function createActionItemsTable(
           ],
         }),
         new TableCell({
-          shading: { fill: rowBg, type: ShadingType.SOLID },
           margins: {
             top: convertInchesToTwip(0.1),
             bottom: convertInchesToTwip(0.1),
             left: convertInchesToTwip(0.12),
             right: convertInchesToTwip(0.12),
           },
-          borders: { bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE } },
+          borders: dataCellBorders,
           children: [
             new Paragraph({
               children: [
@@ -608,14 +605,13 @@ function createActionItemsTable(
           ],
         }),
         new TableCell({
-          shading: { fill: rowBg, type: ShadingType.SOLID },
           margins: {
             top: convertInchesToTwip(0.1),
             bottom: convertInchesToTwip(0.1),
             left: convertInchesToTwip(0.12),
             right: convertInchesToTwip(0.12),
           },
-          borders: { bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE } },
+          borders: dataCellBorders,
           children: [
             new Paragraph({
               children: [
@@ -630,14 +626,13 @@ function createActionItemsTable(
           ],
         }),
         new TableCell({
-          shading: { fill: rowBg, type: ShadingType.SOLID },
           margins: {
             top: convertInchesToTwip(0.1),
             bottom: convertInchesToTwip(0.1),
             left: convertInchesToTwip(0.12),
             right: convertInchesToTwip(0.12),
           },
-          borders: { bottom: { color: COLORS.borderSubtle, size: 4, style: BorderStyle.SINGLE } },
+          borders: dataCellBorders,
           children: [
             new Paragraph({
               children: [
@@ -748,11 +743,85 @@ function createTranscriptSection(
   let currentSpeakerId: string | undefined
   let currentText: string[] = []
 
+  // Build a speaker name lookup map - PARTICIPANTS TAKE PRIORITY
+  // since they have user-edited names
+  const speakerNameMap = new Map<string, string>()
+
+  // First, add participants with their speakerIds (these have user-edited names)
+  for (const participant of participants) {
+    if (participant.speakerId) {
+      speakerNameMap.set(participant.speakerId, participant.name)
+      // Also add lowercase version for case-insensitive matching
+      speakerNameMap.set(participant.speakerId.toLowerCase(), participant.name)
+    }
+  }
+
+  // Then add speakers (only if not already in map from participants)
+  for (const speaker of speakers) {
+    if (!speakerNameMap.has(speaker.id)) {
+      const name = speaker.name || speaker.label
+      if (name) {
+        speakerNameMap.set(speaker.id, name)
+        speakerNameMap.set(speaker.id.toLowerCase(), name)
+      }
+    }
+  }
+
+  // Create a list of unique speaker IDs from segments for index-based fallback
+  const uniqueSpeakerIds: string[] = []
+  for (const seg of segments) {
+    if (seg.speakerId && !uniqueSpeakerIds.includes(seg.speakerId)) {
+      uniqueSpeakerIds.push(seg.speakerId)
+    }
+  }
+
   const getSpeakerName = (speakerId?: string): string => {
-    if (!speakerId) return 'Unbekannt'
-    const speaker = speakers.find((s) => s.id === speakerId)
-    const participant = participants.find((p) => p.speakerId === speakerId)
-    return participant?.name || speaker?.name || speaker?.label || 'Unbekannt'
+    if (!speakerId) {
+      return participants[0]?.name || 'Teilnehmer'
+    }
+
+    // Try direct lookup (case-sensitive)
+    if (speakerNameMap.has(speakerId)) {
+      return speakerNameMap.get(speakerId)!
+    }
+
+    // Try lowercase lookup (case-insensitive)
+    if (speakerNameMap.has(speakerId.toLowerCase())) {
+      return speakerNameMap.get(speakerId.toLowerCase())!
+    }
+
+    // Try to find speaker in array by ID
+    const speaker = speakers.find((s) =>
+      s.id === speakerId || s.id.toLowerCase() === speakerId.toLowerCase()
+    )
+    if (speaker && (speaker.name || speaker.label)) {
+      return speaker.name || speaker.label!
+    }
+
+    // Try to find participant with this speaker ID
+    const participant = participants.find((p) =>
+      p.speakerId === speakerId ||
+      p.speakerId?.toLowerCase() === speakerId.toLowerCase()
+    )
+    if (participant) {
+      return participant.name
+    }
+
+    // Index-based fallback: map speaker IDs to participants by order
+    const speakerIndex = uniqueSpeakerIds.indexOf(speakerId)
+    if (speakerIndex !== -1 && participants[speakerIndex]) {
+      return participants[speakerIndex].name
+    }
+
+    // If we have participants, use round-robin based on speaker order
+    if (participants.length > 0) {
+      const index = speakerIndex !== -1 ? speakerIndex % participants.length : 0
+      return participants[index].name
+    }
+
+    // Last resort: return a numbered speaker label
+    const displayIndex = speakerIndex !== -1 ? speakerIndex + 1 : 1
+    return `Sprecher ${displayIndex}`
   }
 
   const flushCurrentSpeaker = () => {
@@ -778,7 +847,7 @@ function createTranscriptSection(
         new Paragraph({
           border: {
             left: {
-              color: COLORS.borderSubtle,
+              color: COLORS.border,
               size: 18,
               style: BorderStyle.SINGLE,
               space: 8,
@@ -1016,13 +1085,9 @@ export async function generateMeetingProtocol(
 
     if (contentOptions.includeSummary && meeting.notes?.summary) {
       sections.push(...createSectionHeading('Zusammenfassung'))
-      // Summary in a highlight box style
+      // Summary with elegant left border accent (white background)
       sections.push(
         new Paragraph({
-          shading: {
-            type: ShadingType.SOLID,
-            fill: COLORS.bgAccent,
-          },
           border: {
             left: {
               color: COLORS.primary,
@@ -1031,8 +1096,7 @@ export async function generateMeetingProtocol(
             },
           },
           indent: {
-            left: convertInchesToTwip(0.15),
-            right: convertInchesToTwip(0.15),
+            left: convertInchesToTwip(0.2),
           },
           children: [
             new TextRun({
@@ -1152,7 +1216,7 @@ export async function generateMeetingProtocol(
               indent: { left: convertInchesToTwip(0.25) },
               border: {
                 left: {
-                  color: COLORS.borderSubtle,
+                  color: COLORS.border,
                   size: 12,
                   style: BorderStyle.SINGLE,
                   space: 6,
@@ -1402,7 +1466,7 @@ export async function generateMeetingProtocol(
                 new Paragraph({
                   border: {
                     bottom: {
-                      color: COLORS.borderSubtle,
+                      color: COLORS.border,
                       size: 4,
                       style: BorderStyle.SINGLE,
                     },
@@ -1417,7 +1481,7 @@ export async function generateMeetingProtocol(
                 new Paragraph({
                   border: {
                     top: {
-                      color: COLORS.borderSubtle,
+                      color: COLORS.border,
                       size: 4,
                       style: BorderStyle.SINGLE,
                     },

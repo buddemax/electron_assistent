@@ -6,7 +6,7 @@
       <stop offset="100%" stop-color="#B07D32"/>
     </linearGradient>
   </defs>
-  <!-- V and O connected -->
+  <!-- V and O connected - scaled up for better visibility -->
   <path
     d="M 8 8
        L 32 48
@@ -21,6 +21,6 @@
     stroke-linecap="round"
     stroke-linejoin="round"
     fill="none"
-    transform="translate(0, -20) scale(0.95)"
+    transform="translate(-2, -18) scale(1.05)"
   />
 </svg>

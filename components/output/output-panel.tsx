@@ -27,6 +27,10 @@ export function OutputPanel() {
   const [microsoftError, setMicrosoftError] = useState<string | null>(null)
   const [platform, setPlatform] = useState<string>('darwin')
 
+  // Notes export states
+  const [notesAdded, setNotesAdded] = useState(false)
+  const [notesError, setNotesError] = useState<string | null>(null)
+
   // Check platform on mount
   useEffect(() => {
     const checkPlatform = async () => {
@@ -230,6 +234,37 @@ export function OutputPanel() {
       }
     } catch (error) {
       setMicrosoftError(error instanceof Error ? error.message : 'Unbekannter Fehler')
+    }
+  }
+
+  // ==================== NOTES FUNCTIONS ====================
+
+  const handleAddToNotes = async () => {
+    if (!currentOutput) {
+      setNotesError('Kein Output vorhanden')
+      return
+    }
+
+    if (!window.electronAPI?.notes) {
+      setNotesError('Notizen-Integration nicht verfügbar')
+      return
+    }
+
+    setNotesError(null)
+
+    const title = currentOutput.content.title || 'VoiceOS Notiz'
+    const body = currentOutput.content.body
+
+    const result = await window.electronAPI.notes.createNote({
+      title,
+      body,
+    })
+
+    if (result.success) {
+      setNotesAdded(true)
+      setTimeout(() => setNotesAdded(false), 3000)
+    } else {
+      setNotesError(result.error || 'Fehler beim Erstellen der Notiz')
     }
   }
 
@@ -598,6 +633,29 @@ export function OutputPanel() {
             </>
           )}
 
+          {/* Apple Notes - for note type on macOS */}
+          {currentOutput.type === 'note' && platform === 'darwin' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleAddToNotes}
+              disabled={notesAdded}
+              className="text-xs px-2 py-1"
+            >
+              {notesAdded ? (
+                <>
+                  <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                  Gespeichert
+                </>
+              ) : (
+                <>
+                  <NotesIcon className="w-3.5 h-3.5 mr-1" />
+                  Notizen
+                </>
+              )}
+            </Button>
+          )}
+
           <Button variant="ghost" size="sm" className="text-xs px-2 py-1">
             <RefreshIcon className="w-3.5 h-3.5 mr-1" />
             Neu
@@ -612,6 +670,9 @@ export function OutputPanel() {
           )}
           {microsoftError && (
             <span className="text-[10px] text-red-500 ml-auto">{microsoftError}</span>
+          )}
+          {notesError && (
+            <span className="text-[10px] text-red-500 ml-auto">{notesError}</span>
           )}
         </div>
       )}
@@ -707,6 +768,18 @@ function MicrosoftIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M11.4 24H0V12.6h11.4V24zM24 24H12.6V12.6H24V24zM11.4 11.4H0V0h11.4v11.4zm12.6 0H12.6V0H24v11.4z" />
+    </svg>
+  )
+}
+
+function NotesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
     </svg>
   )
 }

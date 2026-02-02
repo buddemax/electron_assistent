@@ -47,7 +47,7 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
   const { generateOutput } = useOutputStore()
   const { addEntry: addKnowledgeEntry } = useKnowledgeStore()
 
-  const { settings, mode, setMode, profile } = useAppStore()
+  const { settings, mode, setMode, profile, dailyQuestions } = useAppStore()
   const [showHint, setShowHint] = useState(true)
   const [shortcutConfirmation, setShortcutConfirmation] = useState<string | null>(null)
 
@@ -375,7 +375,8 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
             mode,
             contextState.context,
             profile,
-            contextState.conversationContext
+            contextState.conversationContext,
+            dailyQuestions.answers
           )
 
           // Add assistant response to conversation
@@ -408,7 +409,8 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
             mode,
             contextState.context,
             profile,
-            undefined
+            undefined,
+            dailyQuestions.answers
           )
         }
 
@@ -430,7 +432,7 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
     } finally {
       abortControllerRef.current = null
     }
-  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, generateOutput, mode, addKnowledgeEntry, profile])
+  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, generateOutput, mode, addKnowledgeEntry, profile, dailyQuestions.answers])
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {

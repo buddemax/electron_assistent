@@ -32,7 +32,8 @@
       "Bash(npx next build:*)",
       "Bash(npx next lint:*)",
       "Bash(pgrep:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npx eslint:*)"
     ]
   }
 }

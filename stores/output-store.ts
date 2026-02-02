@@ -9,6 +9,7 @@ import type { KnowledgeReference } from '@/types/knowledge'
 import type { UserProfile, OutputLength } from '@/types/profile'
 import type { Intent } from '@/lib/context/intent-detector'
 import type { Conversation } from '@/types/conversation'
+import type { QuestionAnswer } from '@/types/daily-questions'
 
 // Map profile's OutputLength to OutputVariant
 function mapOutputLengthToVariant(length: OutputLength): OutputVariant {
@@ -67,7 +68,7 @@ interface OutputState {
   addToHistory: (output: GeneratedOutput) => void
   clearHistory: () => void
   reset: () => void
-  generateOutput: (transcription: string, mode?: Mode, context?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string) => Promise<void>
+  generateOutput: (transcription: string, mode?: Mode, context?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string, dailyQuestionsAnswers?: readonly QuestionAnswer[]) => Promise<void>
   fetchContext: (query: string, mode: Mode, entries: readonly import('@/types/knowledge').KnowledgeEntry[], documents?: readonly import('@/types/document').DocumentEntry[], conversation?: Conversation | null) => Promise<ContextState>
   cancelGeneration: () => void
 }
@@ -195,7 +196,7 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
     return contextState
   },
 
-  generateOutput: async (transcription: string, mode: Mode = 'work', providedContext?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string) => {
+  generateOutput: async (transcription: string, mode: Mode = 'work', providedContext?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string, dailyQuestionsAnswers?: readonly QuestionAnswer[]) => {
     const abortController = new AbortController()
     set({ isGenerating: true, generationProgress: 0, abortController })
 
@@ -220,6 +221,10 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
           context: context.length > 0 ? context : undefined,
           profile,
           conversationContext: convContext,
+          dailyQuestionsAnswers: dailyQuestionsAnswers?.map((a) => ({
+            ...a,
+            answeredAt: a.answeredAt.toISOString(),
+          })),
         }),
         signal: abortController.signal,
       })

@@ -63,6 +63,14 @@ export interface ElectronAPI {
     }>, listName?: string) => Promise<{ success: boolean; created: number; error?: string }>
     getLists: () => Promise<{ success: boolean; lists?: string[]; error?: string }>
   }
+  notes: {
+    createNote: (noteData: {
+      title: string
+      body: string
+      folderName?: string
+    }) => Promise<{ success: boolean; error?: string }>
+    getFolders: () => Promise<{ success: boolean; folders?: string[]; error?: string }>
+  }
   microsoftTodo: {
     openApp: () => Promise<{ success: boolean; error?: string }>
     checkInstalled: () => Promise<boolean>
@@ -145,6 +153,14 @@ const electronAPI: ElectronAPI = {
       priority?: 'low' | 'medium' | 'high'
     }>, listName?: string) => ipcRenderer.invoke('reminders-create-tasks', tasks, listName) as Promise<{ success: boolean; created: number; error?: string }>,
     getLists: () => ipcRenderer.invoke('reminders-get-lists') as Promise<{ success: boolean; lists?: string[]; error?: string }>,
+  },
+  notes: {
+    createNote: (noteData: {
+      title: string
+      body: string
+      folderName?: string
+    }) => ipcRenderer.invoke('notes-create-note', noteData) as Promise<{ success: boolean; error?: string }>,
+    getFolders: () => ipcRenderer.invoke('notes-get-folders') as Promise<{ success: boolean; folders?: string[]; error?: string }>,
   },
   microsoftTodo: {
     openApp: () => ipcRenderer.invoke('microsoft-todo-open-app') as Promise<{ success: boolean; error?: string }>,

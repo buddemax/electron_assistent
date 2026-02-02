@@ -2,7 +2,8 @@ import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
 import type { OutputType, OutputVariant, Mode, GeneratedOutput } from '@/types/output'
 import type { KnowledgeReference } from '@/types/knowledge'
 import type { UserProfile } from '@/types/profile'
-import { buildProfileContext } from '@/lib/ai/profile-prompt'
+import type { QuestionAnswer } from '@/types/daily-questions'
+import { buildProfileContext, buildFullProfileContext } from '@/lib/ai/profile-prompt'
 import { v4 as uuidv4 } from 'uuid'
 
 let genAI: GoogleGenerativeAI | null = null
@@ -52,6 +53,7 @@ export interface GenerateOptions {
   language?: 'de' | 'en'
   profile?: UserProfile
   conversationContext?: string
+  dailyQuestionsAnswers?: readonly QuestionAnswer[]
 }
 
 export interface GenerateResult {
@@ -75,7 +77,6 @@ Mögliche Typen:
 - question: Fragen ("Was weiß ich über...", "Wie funktioniert...", Fragezeichen)
 - brainstorm: Ideen sammeln ("Ideen für...", "Brainstorming", kreative Sammlung)
 - summary: Zusammenfassen ("Fasse zusammen...", "Summary von...")
-- code: Code-bezogen ("Code für...", "Programmiere...", technische Implementierung)
 - calendar: Termine und Kalendereinträge ("Meeting am...", "Termin am Freitag um...", "Besprechung am...", enthält Datum UND Uhrzeit)
 - general: Alles andere
 
@@ -254,16 +255,6 @@ WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
   "fullSummary": "Ausführlichere Zusammenfassung als Fließtext"
 }`,
 
-  code: `Erstelle Code basierend auf der Anfrage.
-
-WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
-{
-  "language": "Programmiersprache",
-  "code": "Der Code hier",
-  "explanation": "Kurze Erklärung was der Code macht",
-  "usage": "Beispiel wie man den Code verwendet"
-}`,
-
   general: `Verarbeite die Anfrage und erstelle einen hilfreichen Output.
 
 WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
@@ -299,7 +290,6 @@ export async function detectOutputType(
     'question',
     'brainstorm',
     'summary',
-    'code',
     'calendar',
     'general',
   ]
@@ -329,8 +319,10 @@ export async function generateOutput(
       .join('\n')}`
   }
 
-  // Build profile context if available
-  const profileContext = options.profile ? buildProfileContext(options.profile) : ''
+  // Build profile context if available (including daily questions answers)
+  const profileContext = options.profile
+    ? buildFullProfileContext(options.profile, options.dailyQuestionsAnswers || [])
+    : ''
 
   // Generate all three variants
   const variants: OutputVariant[] = ['short', 'standard', 'detailed']
@@ -590,29 +582,6 @@ function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
       }
     }
 
-    case 'code': {
-      const lines: string[] = []
-      if (parsed.explanation) {
-        lines.push(parsed.explanation as string)
-        lines.push('')
-      }
-      if (parsed.code) {
-        lines.push('```' + ((parsed.language as string) || ''))
-        lines.push(parsed.code as string)
-        lines.push('```')
-      }
-      if (parsed.usage) {
-        lines.push('')
-        lines.push(`Verwendung: ${parsed.usage}`)
-      }
-
-      return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: `${parsed.language || 'Code'}`,
-      }
-    }
-
     case 'calendar': {
       const event = parsed.event as {
         title: string
@@ -672,11 +641,6 @@ function getSuggestedActions(type: OutputType): Array<{ type: ActionType; label:
         ...baseActions,
         { type: 'export' as ActionType, label: 'In Mail öffnen' },
       ]
-    case 'code':
-      return [
-        ...baseActions,
-        { type: 'export' as ActionType, label: 'In Editor öffnen' },
-      ]
     default:
       return baseActions
   }
@@ -689,7 +653,9 @@ export async function* streamGeneration(
 ): AsyncGenerator<{ chunk: string } | { complete: GeneratedOutput }> {
   const model = getGeminiClient(apiKey)
   const outputType = options.outputType || await detectOutputType(options.transcription, apiKey)
-  const profileContext = options.profile ? buildProfileContext(options.profile) : ''
+  const profileContext = options.profile
+    ? buildFullProfileContext(options.profile, options.dailyQuestionsAnswers || [])
+    : ''
 
   const systemPrompt = `Du bist ein Assistent der strukturierte Outputs auf Deutsch generiert.
 ${options.mode === 'work' ? 'Kontext: Beruflich - professioneller Ton.' : 'Kontext: Privat - freundlicher Ton.'}
