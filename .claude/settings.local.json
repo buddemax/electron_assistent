@@ -33,7 +33,10 @@
       "Bash(npx next lint:*)",
       "Bash(pgrep:*)",
       "WebSearch",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(hdiutil attach:*)",
+      "Bash(hdiutil detach:*)",
+      "Bash(open:*)"
     ]
   }
 }

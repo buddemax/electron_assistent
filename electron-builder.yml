@@ -8,24 +8,36 @@ directories:
 
 files:
   - dist/**/*
-  - out/**/*
-  - public/**/*
   - build/**/*
   - package.json
+extraResources:
+  - from: .next/standalone
+    to: standalone
+    filter:
+      - "**/*"
+  - from: .next/static
+    to: standalone/everlast/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: standalone/everlast/public
+    filter:
+      - "**/*"
+asar: true
+asarUnpack:
+  - "**/*.node"
 
 mac:
   category: public.app-category.productivity
   target:
-    - target: dmg
+    - target: dir
       arch:
-        - x64
         - arm64
   icon: build/icon.icns
   darkModeSupport: true
-  hardenedRuntime: true
+  hardenedRuntime: false
   gatekeeperAssess: false
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.plist
+  identity: null
 
 win:
   target:

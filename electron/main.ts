@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell, powerSaveBlocker } from 'electron'
 import * as path from 'path'
+import { spawn, ChildProcess } from 'child_process'
 import Store from 'electron-store'
+
+// Next.js server process
+let nextServerProcess: ChildProcess | null = null
+const NEXT_SERVER_PORT = 3456
 
 // Meeting recording state
 let meetingPowerSaveBlockerId: number | null = null
@@ -14,6 +19,105 @@ let tray: Tray | null = null
 
 const isDev = process.env.NODE_ENV === 'development'
 const NEXT_DEV_URL = 'http://localhost:3000'
+const NEXT_PROD_URL = `http://localhost:${NEXT_SERVER_PORT}`
+
+/**
+ * Start the Next.js standalone server in production mode
+ */
+function startNextServer(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (isDev) {
+      resolve()
+      return
+    }
+
+    // In production, the standalone folder is in Resources/standalone
+    const resourcesPath = process.resourcesPath || path.join(__dirname, '../..')
+    const standalonePath = path.join(resourcesPath, 'standalone/everlast')
+    const serverPath = path.join(standalonePath, 'server.js')
+
+    console.log('Starting Next.js standalone server from:', serverPath)
+
+    nextServerProcess = spawn(process.execPath, [serverPath], {
+      cwd: standalonePath,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        NODE_ENV: 'production',
+        PORT: String(NEXT_SERVER_PORT),
+        HOSTNAME: 'localhost'
+      },
+    })
+
+    let started = false
+    let settled = false
+    let startupTimeout: NodeJS.Timeout | null = null
+
+    const resolveOnce = (): void => {
+      if (settled) return
+      settled = true
+      if (startupTimeout) {
+        clearTimeout(startupTimeout)
+      }
+      resolve()
+    }
+
+    const rejectOnce = (error: Error): void => {
+      if (settled) return
+      settled = true
+      if (startupTimeout) {
+        clearTimeout(startupTimeout)
+      }
+      reject(error)
+    }
+
+    nextServerProcess.stdout?.on('data', (data: Buffer) => {
+      const output = data.toString()
+      console.log('[Next.js]', output)
+      if (!started && (output.includes('Ready') || output.includes('started') || output.includes(`${NEXT_SERVER_PORT}`))) {
+        started = true
+        // Give server a moment to fully initialize
+        setTimeout(resolveOnce, 500)
+      }
+    })
+
+    nextServerProcess.stderr?.on('data', (data: Buffer) => {
+      console.error('[Next.js Error]', data.toString())
+    })
+
+    nextServerProcess.on('error', (err) => {
+      console.error('Failed to start Next.js server:', err)
+      rejectOnce(err instanceof Error ? err : new Error(String(err)))
+    })
+
+    nextServerProcess.on('exit', (code) => {
+      console.log(`Next.js server exited with code ${code}`)
+      nextServerProcess = null
+      if (!started) {
+        rejectOnce(new Error(`Next.js server exited before startup (code: ${code ?? 'unknown'})`))
+      }
+    })
+
+    // Timeout after 15 seconds
+    startupTimeout = setTimeout(() => {
+      if (!started) {
+        rejectOnce(new Error('Next.js server startup timeout after 15 seconds'))
+      }
+    }, 15000)
+  })
+}
+
+/**
+ * Stop the Next.js server
+ */
+function stopNextServer(): void {
+  if (nextServerProcess) {
+    console.log('Stopping Next.js server...')
+    nextServerProcess.kill('SIGTERM')
+    nextServerProcess = null
+  }
+}
 
 function createWindow(): void {
   // Get the correct icon path based on platform
@@ -53,8 +157,17 @@ function createWindow(): void {
     mainWindow.loadURL(NEXT_DEV_URL)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../out/index.html'))
+    mainWindow.loadURL(NEXT_PROD_URL)
   }
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log(`Main window loaded: ${isDev ? NEXT_DEV_URL : NEXT_PROD_URL}`)
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    console.error(`Failed to load URL ${validatedURL} (${errorCode}): ${errorDescription}`)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -810,44 +923,7 @@ end tell
   })
 }
 
-// App lifecycle
-app.whenReady().then(() => {
-  // Set app name
-  app.setName('VoiceOS')
-
-  // Set dock icon on macOS
-  if (process.platform === 'darwin' && app.dock) {
-    const rootDir = path.join(__dirname, '../..')
-    const dockIconPath = path.join(rootDir, 'build/icon.png')
-    const dockIcon = nativeImage.createFromPath(dockIconPath)
-    if (!dockIcon.isEmpty()) {
-      app.dock.setIcon(dockIcon)
-    }
-  }
-
-  createWindow()
-  createTray()
-  registerGlobalShortcuts()
-  setupIpcHandlers()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
-
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
-})
-
-// Prevent multiple instances
+// Prevent multiple instances - MUST be checked BEFORE app.whenReady()
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
@@ -859,5 +935,52 @@ if (!gotTheLock) {
       mainWindow.show()
       mainWindow.focus()
     }
+  })
+
+  // App lifecycle - only runs if we got the lock
+  app.whenReady().then(async () => {
+    // Set app name
+    app.setName('VoiceOS')
+
+    // Set dock icon on macOS
+    if (process.platform === 'darwin' && app.dock) {
+      const rootDir = path.join(__dirname, '../..')
+      const dockIconPath = path.join(rootDir, 'build/icon.png')
+      const dockIcon = nativeImage.createFromPath(dockIconPath)
+      if (!dockIcon.isEmpty()) {
+        app.dock.setIcon(dockIcon)
+      }
+    }
+
+    // Start Next.js server in production
+    try {
+      await startNextServer()
+    } catch (err) {
+      console.error('Failed to start Next.js server:', err)
+      app.quit()
+      return
+    }
+
+    createWindow()
+    createTray()
+    registerGlobalShortcuts()
+    setupIpcHandlers()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll()
+    stopNextServer()
   })
 }
