@@ -35,6 +35,8 @@ const generateRequestSchema = z.object({
     'general',
   ]).optional(),
   variant: z.enum(['short', 'standard', 'detailed']).default('standard'),
+  /** When true, only generate the specified variant instead of all three */
+  singleVariant: z.boolean().optional().default(true),
   context: z.array(z.object({
     id: z.string(),
     snippet: z.string(),
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
         mode: data.mode,
         outputType: data.outputType,
         variant: data.variant,
+        singleVariant: data.singleVariant,
         context: data.context,
         customInstructions: data.customInstructions,
         profile: data.profile,

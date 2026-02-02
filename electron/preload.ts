@@ -71,6 +71,20 @@ export interface ElectronAPI {
     }) => Promise<{ success: boolean; error?: string }>
     getFolders: () => Promise<{ success: boolean; folders?: string[]; error?: string }>
   }
+  hotkeys: {
+    update: (hotkeys: {
+      activate: { key: string; modifiers: string[]; enabled: boolean }
+      toggleMode: { key: string; modifiers: string[]; enabled: boolean }
+      stopRecording: { key: string; modifiers: string[]; enabled: boolean }
+      copyOutput: { key: string; modifiers: string[]; enabled: boolean }
+    }) => Promise<boolean>
+    get: () => Promise<{
+      activate: { key: string; modifiers: string[]; enabled: boolean }
+      toggleMode: { key: string; modifiers: string[]; enabled: boolean }
+      stopRecording: { key: string; modifiers: string[]; enabled: boolean }
+      copyOutput: { key: string; modifiers: string[]; enabled: boolean }
+    }>
+  }
   microsoftTodo: {
     openApp: () => Promise<{ success: boolean; error?: string }>
     checkInstalled: () => Promise<boolean>
@@ -161,6 +175,10 @@ const electronAPI: ElectronAPI = {
       folderName?: string
     }) => ipcRenderer.invoke('notes-create-note', noteData) as Promise<{ success: boolean; error?: string }>,
     getFolders: () => ipcRenderer.invoke('notes-get-folders') as Promise<{ success: boolean; folders?: string[]; error?: string }>,
+  },
+  hotkeys: {
+    update: (hotkeys) => ipcRenderer.invoke('hotkeys-update', hotkeys) as Promise<boolean>,
+    get: () => ipcRenderer.invoke('hotkeys-get'),
   },
   microsoftTodo: {
     openApp: () => ipcRenderer.invoke('microsoft-todo-open-app') as Promise<{ success: boolean; error?: string }>,

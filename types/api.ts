@@ -49,12 +49,14 @@ export interface GenerateRequest {
 
 export interface GenerateResponse {
   readonly outputs: {
-    readonly short: GeneratedOutput
-    readonly standard: GeneratedOutput
-    readonly detailed: GeneratedOutput
+    readonly short: GeneratedOutput | null
+    readonly standard: GeneratedOutput | null
+    readonly detailed: GeneratedOutput | null
   }
   readonly detectedType: OutputType
   readonly usedContext: readonly KnowledgeReference[]
+  /** When singleVariant was used, indicates which variant was generated */
+  readonly generatedVariant?: OutputVariant
 }
 
 // Knowledge API

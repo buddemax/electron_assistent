@@ -11,6 +11,7 @@ import { useConversationStore } from '@/stores/conversation-store'
 import { Waveform } from './waveform'
 import { getRecorder } from '@/lib/audio/recorder'
 import { createKnowledgeEntry, serializeEntry } from '@/lib/knowledge'
+import { isDuplicate } from '@/lib/knowledge/similarity'
 import { detectShortcut, isImmediateAction, getModifiedTranscription } from '@/lib/voice/shortcut-detector'
 import { createDebouncedFetcher } from '@/lib/context/live-suggestions'
 import { ContextSidebar } from '@/components/context/context-sidebar'
@@ -50,6 +51,7 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
   const { settings, mode, setMode, profile, dailyQuestions } = useAppStore()
   const [showHint, setShowHint] = useState(true)
   const [shortcutConfirmation, setShortcutConfirmation] = useState<string | null>(null)
+  const [conversationWarning, setConversationWarning] = useState<string | null>(null)
 
   // Create debounced fetcher for live suggestions
   const debouncedFetcher = useMemo(() => createDebouncedFetcher(300), [])
@@ -280,18 +282,12 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
               const { entries: existingEntries } = useKnowledgeStore.getState()
 
               for (const fact of extractedFacts) {
-                // Check if this fact already exists (avoid duplicates)
-                const factContentLower = fact.content.toLowerCase()
-                const isDuplicate = existingEntries.some(existing => {
-                  const existingLower = existing.content.toLowerCase()
-                  // Check for exact match or high similarity
-                  return existingLower === factContentLower ||
-                    existingLower.includes(factContentLower) ||
-                    factContentLower.includes(existingLower)
-                })
+                // Check if this fact already exists using fuzzy matching (avoid duplicates)
+                // Uses 75% similarity threshold to catch near-duplicates while avoiding false positives
+                const duplicate = isDuplicate(fact.content, existingEntries, 0.75)
 
-                if (isDuplicate) {
-                  continue // Skip this fact, it's already stored
+                if (duplicate) {
+                  continue // Skip this fact, it's already stored or too similar
                 }
 
                 // Create a knowledge entry for each new extracted fact
@@ -395,6 +391,11 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
         } catch (convError) {
           // If conversation handling fails, still try to generate output without conversation context
           console.warn('Conversation handling failed, continuing without:', convError)
+
+          // Show user-visible warning
+          setConversationWarning('Follow-Up Kontext nicht verfügbar - Antwort ohne Bezug auf vorherige Fragen')
+          // Auto-clear warning after 8 seconds
+          setTimeout(() => setConversationWarning(null), 8000)
 
           const contextState = await fetchContext(
             textForGeneration,
@@ -503,6 +504,34 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
             className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-[var(--accent-subtle)] text-[var(--accent)] rounded-[var(--radius-md)] text-xs font-medium"
           >
             {shortcutConfirmation}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Conversation Context Warning */}
+      <AnimatePresence>
+        {conversationWarning && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-2 left-1/2 -translate-x-1/2 max-w-sm px-3 py-2 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-[var(--radius-md)] text-xs flex items-center gap-2"
+          >
+            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" x2="12" y1="9" y2="13" />
+              <line x1="12" x2="12.01" y1="17" y2="17" />
+            </svg>
+            <span>{conversationWarning}</span>
+            <button
+              onClick={() => setConversationWarning(null)}
+              className="ml-1 p-0.5 hover:bg-amber-500/20 rounded transition-colors"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" x2="6" y1="6" y2="18" />
+                <line x1="6" x2="18" y1="6" y2="18" />
+              </svg>
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

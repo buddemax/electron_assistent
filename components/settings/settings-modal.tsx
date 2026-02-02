@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Toggle } from '@/components/ui/toggle'
 import { getQuestionsProgress } from '@/lib/daily-questions'
 import { ProfileEditModal } from './profile-edit-modal'
+import { HotkeyEditor } from './hotkey-editor'
 import type { UserProfile } from '@/types/profile'
+import type { HotkeySettings as HotkeySettingsType } from '@/types/settings'
 
 type SettingsTab = 'general' | 'voice' | 'api' | 'integrations' | 'appearance' | 'hotkeys'
 
@@ -510,27 +512,54 @@ function IntegrationsSettings() {
       </div>
 
       {/* Apple Calendar */}
-      <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
-            <CalendarIcon className="w-5 h-5 text-white" />
+      {platform === 'darwin' && (
+        <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+              <CalendarIcon className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                Apple Kalender
+              </h3>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                macOS native Integration
+              </p>
+            </div>
+            <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
+              Verfügbar
+            </span>
           </div>
-          <div className="flex-1">
-            <h3 className="text-sm font-medium text-[var(--text-primary)]">
-              Apple Kalender
-            </h3>
-            <p className="text-xs text-[var(--text-tertiary)]">
-              macOS native Integration
-            </p>
-          </div>
-          <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
-            Verfügbar
-          </span>
+          <p className="text-xs text-[var(--text-muted)]">
+            Termine werden direkt in die Kalender-App exportiert. Klicke bei einem erkannten Termin auf &quot;Kalender&quot;.
+          </p>
         </div>
-        <p className="text-xs text-[var(--text-muted)]">
-          Termine werden direkt in den Kalender exportiert.
-        </p>
-      </div>
+      )}
+
+      {/* Apple Notes */}
+      {platform === 'darwin' && (
+        <div className="p-4 border border-[var(--border)] rounded-[var(--radius-md)]">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-yellow-400 to-yellow-500 flex items-center justify-center">
+              <NotesIcon className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">
+                Apple Notizen
+              </h3>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                macOS native Integration
+              </p>
+            </div>
+            <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full">
+              Verfügbar
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            Notizen werden direkt in die Notizen-App exportiert. Klicke bei einer erkannten Notiz auf &quot;Notizen&quot;.
+          </p>
+        </div>
+      )}
 
       {/* Info box */}
       <div className="p-3 bg-[var(--bg-secondary)] rounded-[var(--radius-sm)]">
@@ -593,39 +622,88 @@ function AppearanceSettings({ settings, onUpdate }: SettingsSectionProps<typeof 
   )
 }
 
-function HotkeySettings({ settings }: SettingsSectionProps<typeof import('@/types/settings').DEFAULT_SETTINGS.hotkeys>) {
+function HotkeySettings({ settings, onUpdate }: SettingsSectionProps<HotkeySettingsType>) {
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
+
+  // Sync hotkeys to Electron when they change
+  const handleHotkeyChange = useCallback(async (key: keyof HotkeySettingsType, hotkey: HotkeySettingsType[keyof HotkeySettingsType]) => {
+    const newSettings = { ...settings, [key]: hotkey }
+    onUpdate({ [key]: hotkey })
+
+    // Sync to Electron for immediate effect
+    if (window.electronAPI?.hotkeys) {
+      setSyncStatus('syncing')
+      try {
+        // Convert readonly arrays to mutable for Electron API
+        const electronHotkeys = {
+          activate: { ...newSettings.activate, modifiers: [...newSettings.activate.modifiers] },
+          toggleMode: { ...newSettings.toggleMode, modifiers: [...newSettings.toggleMode.modifiers] },
+          stopRecording: { ...newSettings.stopRecording, modifiers: [...newSettings.stopRecording.modifiers] },
+          copyOutput: { ...newSettings.copyOutput, modifiers: [...newSettings.copyOutput.modifiers] },
+        }
+        await window.electronAPI.hotkeys.update(electronHotkeys)
+        setSyncStatus('success')
+        setTimeout(() => setSyncStatus('idle'), 2000)
+      } catch (error) {
+        console.error('Failed to sync hotkeys to Electron:', error)
+        setSyncStatus('error')
+        setTimeout(() => setSyncStatus('idle'), 3000)
+      }
+    }
+  }, [settings, onUpdate])
+
   return (
     <div className="space-y-6">
       <p className="text-xs text-[var(--text-tertiary)] mb-4">
+        Klicke auf &quot;Ändern&quot; und drücke die gewünschte Tastenkombination.
         Globale Shortcuts funktionieren auch wenn die App im Hintergrund ist.
       </p>
 
-      <SettingsRow
+      <HotkeyEditor
         label="Aktivieren"
         description="App öffnen / Aufnahme starten"
-      >
-        <kbd className="px-2 py-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-xs font-mono text-[var(--text-secondary)]">
-          ⌘ ⇧ Space
-        </kbd>
-      </SettingsRow>
+        hotkey={settings.activate}
+        onChange={(hotkey) => handleHotkeyChange('activate', hotkey)}
+      />
 
-      <SettingsRow
+      <HotkeyEditor
+        label="Modus wechseln"
+        description="Zwischen Arbeit/Privat wechseln"
+        hotkey={settings.toggleMode}
+        onChange={(hotkey) => handleHotkeyChange('toggleMode', hotkey)}
+      />
+
+      <HotkeyEditor
         label="Aufnahme stoppen"
         description="Aufnahme beenden"
-      >
-        <kbd className="px-2 py-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-xs font-mono text-[var(--text-secondary)]">
-          Esc
-        </kbd>
-      </SettingsRow>
+        hotkey={settings.stopRecording}
+        onChange={(hotkey) => handleHotkeyChange('stopRecording', hotkey)}
+      />
 
-      <SettingsRow
+      <HotkeyEditor
         label="Output kopieren"
         description="Aktuellen Output in Zwischenablage"
-      >
-        <kbd className="px-2 py-1 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-xs font-mono text-[var(--text-secondary)]">
-          ⌘ C
-        </kbd>
-      </SettingsRow>
+        hotkey={settings.copyOutput}
+        onChange={(hotkey) => handleHotkeyChange('copyOutput', hotkey)}
+      />
+
+      <div className="pt-4 border-t border-[var(--border)]">
+        {syncStatus === 'success' && (
+          <p className="text-xs text-green-500">
+            ✓ Shortcuts wurden aktualisiert
+          </p>
+        )}
+        {syncStatus === 'error' && (
+          <p className="text-xs text-red-500">
+            ✗ Fehler beim Aktualisieren der Shortcuts
+          </p>
+        )}
+        {syncStatus === 'idle' && (
+          <p className="text-xs text-[var(--text-muted)]">
+            Shortcuts werden sofort nach Änderung aktiviert.
+          </p>
+        )}
+      </div>
     </div>
   )
 }
@@ -705,6 +783,18 @@ function CalendarIcon({ className }: { className?: string }) {
       <line x1="16" x2="16" y1="2" y2="6" />
       <line x1="8" x2="8" y1="2" y2="6" />
       <line x1="3" x2="21" y1="10" y2="10" />
+    </svg>
+  )
+}
+
+function NotesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
     </svg>
   )
 }

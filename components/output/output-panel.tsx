@@ -1,12 +1,19 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useOutputStore } from '@/stores/output-store'
 import { OutputTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { resolveDate } from '@/lib/utils/date'
 import * as microsoftTodo from '@/lib/integrations/microsoft-todo'
+
+// Type for persistent export errors with retry capability
+interface ExportError {
+  type: 'calendar' | 'reminders' | 'microsoft' | 'notes'
+  message: string
+  timestamp: Date
+}
 
 export function OutputPanel() {
   const {
@@ -17,19 +24,34 @@ export function OutputPanel() {
 
   const [copied, setCopied] = useState(false)
   const [calendarAdded, setCalendarAdded] = useState(false)
-  const [calendarError, setCalendarError] = useState<string | null>(null)
-
-  // Todo export states
   const [remindersAdded, setRemindersAdded] = useState(false)
-  const [remindersError, setRemindersError] = useState<string | null>(null)
   const [microsoftOpened, setMicrosoftOpened] = useState(false)
   const [microsoftUsedWeb, setMicrosoftUsedWeb] = useState(false)
-  const [microsoftError, setMicrosoftError] = useState<string | null>(null)
-  const [platform, setPlatform] = useState<string>('darwin')
-
-  // Notes export states
   const [notesAdded, setNotesAdded] = useState(false)
-  const [notesError, setNotesError] = useState<string | null>(null)
+  const [platform, setPlatform] = useState<string>('darwin')
+  const [emailBodyCopied, setEmailBodyCopied] = useState(false)
+
+  // Persistent export errors with retry capability
+  const [exportErrors, setExportErrors] = useState<ExportError[]>([])
+  const [isRetrying, setIsRetrying] = useState<string | null>(null)
+
+  // Helper to add/update an export error
+  const addExportError = useCallback((type: ExportError['type'], message: string) => {
+    setExportErrors(prev => [
+      ...prev.filter(e => e.type !== type),
+      { type, message, timestamp: new Date() }
+    ])
+  }, [])
+
+  // Helper to clear an export error
+  const clearExportError = useCallback((type: ExportError['type']) => {
+    setExportErrors(prev => prev.filter(e => e.type !== type))
+  }, [])
+
+  // Dismiss a single error
+  const dismissError = useCallback((type: ExportError['type']) => {
+    setExportErrors(prev => prev.filter(e => e.type !== type))
+  }, [])
 
   // Check platform on mount
   useEffect(() => {
@@ -71,16 +93,37 @@ export function OutputPanel() {
     const emailData = getEmailData()
     if (!emailData) return
 
+    // Maximum URL length that works reliably across platforms and email clients
+    const MAX_MAILTO_LENGTH = 2000
+
     // Encode body with proper line breaks for mailto
     const encodedBody = encodeURIComponent(emailData.body)
       .replace(/%0A/g, '%0D%0A') // Convert LF to CRLF for better compatibility
 
-    const mailtoUrl = `mailto:${emailData.to}?subject=${encodeURIComponent(emailData.subject)}&body=${encodedBody}`
+    const fullMailtoUrl = `mailto:${emailData.to}?subject=${encodeURIComponent(emailData.subject)}&body=${encodedBody}`
 
-    if (window.electronAPI?.shell?.openExternal) {
-      await window.electronAPI.shell.openExternal(mailtoUrl)
+    // Check if URL is too long
+    if (fullMailtoUrl.length > MAX_MAILTO_LENGTH) {
+      // Copy body to clipboard and open mailto without body
+      await window.electronAPI?.clipboard.write(emailData.body)
+      setEmailBodyCopied(true)
+      setTimeout(() => setEmailBodyCopied(false), 5000)
+
+      // Open mailto with just recipient and subject
+      const shortMailtoUrl = `mailto:${emailData.to}?subject=${encodeURIComponent(emailData.subject)}`
+
+      if (window.electronAPI?.shell?.openExternal) {
+        await window.electronAPI.shell.openExternal(shortMailtoUrl)
+      } else {
+        window.location.href = shortMailtoUrl
+      }
     } else {
-      window.location.href = mailtoUrl
+      // URL is within limits, use full mailto
+      if (window.electronAPI?.shell?.openExternal) {
+        await window.electronAPI.shell.openExternal(fullMailtoUrl)
+      } else {
+        window.location.href = fullMailtoUrl
+      }
     }
   }
 
@@ -106,11 +149,11 @@ export function OutputPanel() {
   const handleAddToCalendar = async () => {
     const calendarData = getCalendarData()
     if (!calendarData || !window.electronAPI?.calendar) {
-      setCalendarError('Kalender-Integration nicht verfügbar')
+      addExportError('calendar', 'Kalender-Integration nicht verfügbar')
       return
     }
 
-    setCalendarError(null)
+    clearExportError('calendar')
 
     // Parse the date and time to create start and end dates
     const startDate = resolveDate(calendarData.date, calendarData.time)
@@ -126,9 +169,10 @@ export function OutputPanel() {
 
     if (result.success) {
       setCalendarAdded(true)
+      clearExportError('calendar')
       setTimeout(() => setCalendarAdded(false), 3000)
     } else {
-      setCalendarError(result.error || 'Fehler beim Erstellen des Termins')
+      addExportError('calendar', result.error || 'Fehler beim Erstellen des Termins')
     }
   }
 
@@ -159,16 +203,16 @@ export function OutputPanel() {
   const handleAddToReminders = async () => {
     const todoData = getTodoData()
     if (!todoData || todoData.items.length === 0) {
-      setRemindersError('Keine Aufgaben gefunden')
+      addExportError('reminders', 'Keine Aufgaben gefunden')
       return
     }
 
     if (!window.electronAPI?.reminders) {
-      setRemindersError('Erinnerungen-Integration nicht verfügbar')
+      addExportError('reminders', 'Erinnerungen-Integration nicht verfügbar')
       return
     }
 
-    setRemindersError(null)
+    clearExportError('reminders')
 
     // Map todo items to reminder tasks
     const tasks = todoData.items
@@ -180,7 +224,7 @@ export function OutputPanel() {
       }))
 
     if (tasks.length === 0) {
-      setRemindersError('Alle Aufgaben bereits erledigt')
+      addExportError('reminders', 'Alle Aufgaben bereits erledigt')
       return
     }
 
@@ -188,20 +232,21 @@ export function OutputPanel() {
 
     if (result.success) {
       setRemindersAdded(true)
+      clearExportError('reminders')
       setTimeout(() => setRemindersAdded(false), 3000)
     } else {
-      setRemindersError(result.error || 'Fehler beim Erstellen der Erinnerungen')
+      addExportError('reminders', result.error || 'Fehler beim Erstellen der Erinnerungen')
     }
   }
 
   const handleAddToMicrosoftTodo = async () => {
     const todoData = getTodoData()
     if (!todoData || todoData.items.length === 0) {
-      setMicrosoftError('Keine Aufgaben gefunden')
+      addExportError('microsoft', 'Keine Aufgaben gefunden')
       return
     }
 
-    setMicrosoftError(null)
+    clearExportError('microsoft')
 
     // Map todo items to Microsoft To Do tasks
     const tasks = todoData.items
@@ -213,7 +258,7 @@ export function OutputPanel() {
       }))
 
     if (tasks.length === 0) {
-      setMicrosoftError('Alle Aufgaben bereits erledigt')
+      addExportError('microsoft', 'Alle Aufgaben bereits erledigt')
       return
     }
 
@@ -224,16 +269,17 @@ export function OutputPanel() {
       if (result.success) {
         setMicrosoftOpened(true)
         setMicrosoftUsedWeb(result.usedWeb)
+        clearExportError('microsoft')
         // Show longer if web version was used (user needs to paste)
         setTimeout(() => {
           setMicrosoftOpened(false)
           setMicrosoftUsedWeb(false)
         }, result.usedWeb ? 5000 : 3000)
       } else {
-        setMicrosoftError('Microsoft To Do konnte nicht geöffnet werden')
+        addExportError('microsoft', 'Microsoft To Do konnte nicht geöffnet werden')
       }
     } catch (error) {
-      setMicrosoftError(error instanceof Error ? error.message : 'Unbekannter Fehler')
+      addExportError('microsoft', error instanceof Error ? error.message : 'Unbekannter Fehler')
     }
   }
 
@@ -241,16 +287,16 @@ export function OutputPanel() {
 
   const handleAddToNotes = async () => {
     if (!currentOutput) {
-      setNotesError('Kein Output vorhanden')
+      addExportError('notes', 'Kein Output vorhanden')
       return
     }
 
     if (!window.electronAPI?.notes) {
-      setNotesError('Notizen-Integration nicht verfügbar')
+      addExportError('notes', 'Notizen-Integration nicht verfügbar')
       return
     }
 
-    setNotesError(null)
+    clearExportError('notes')
 
     const title = currentOutput.content.title || 'VoiceOS Notiz'
     const body = currentOutput.content.body
@@ -262,9 +308,44 @@ export function OutputPanel() {
 
     if (result.success) {
       setNotesAdded(true)
+      clearExportError('notes')
       setTimeout(() => setNotesAdded(false), 3000)
     } else {
-      setNotesError(result.error || 'Fehler beim Erstellen der Notiz')
+      addExportError('notes', result.error || 'Fehler beim Erstellen der Notiz')
+    }
+  }
+
+  // ==================== RETRY HANDLER ====================
+
+  const handleRetry = async (errorType: ExportError['type']) => {
+    setIsRetrying(errorType)
+    try {
+      switch (errorType) {
+        case 'calendar':
+          await handleAddToCalendar()
+          break
+        case 'reminders':
+          await handleAddToReminders()
+          break
+        case 'microsoft':
+          await handleAddToMicrosoftTodo()
+          break
+        case 'notes':
+          await handleAddToNotes()
+          break
+      }
+    } finally {
+      setIsRetrying(null)
+    }
+  }
+
+  // Get error label for display
+  const getErrorLabel = (type: ExportError['type']): string => {
+    switch (type) {
+      case 'calendar': return 'Kalender'
+      case 'reminders': return 'Erinnerungen'
+      case 'microsoft': return 'Microsoft To Do'
+      case 'notes': return 'Notizen'
     }
   }
 
@@ -556,8 +637,17 @@ export function OutputPanel() {
 
           {currentOutput.type === 'email' && (
             <Button variant="secondary" size="sm" onClick={handleOpenInMail} className="text-xs px-2 py-1">
-              <MailIcon className="w-3.5 h-3.5 mr-1" />
-              Mail
+              {emailBodyCopied ? (
+                <>
+                  <ClipboardIcon className="w-3.5 h-3.5 mr-1" />
+                  Text kopiert (⌘V)
+                </>
+              ) : (
+                <>
+                  <MailIcon className="w-3.5 h-3.5 mr-1" />
+                  Mail
+                </>
+              )}
             </Button>
           )}
 
@@ -660,20 +750,54 @@ export function OutputPanel() {
             <RefreshIcon className="w-3.5 h-3.5 mr-1" />
             Neu
           </Button>
+        </div>
+      )}
 
-          {/* Error messages */}
-          {calendarError && (
-            <span className="text-[10px] text-red-500 ml-auto">{calendarError}</span>
-          )}
-          {remindersError && (
-            <span className="text-[10px] text-red-500 ml-auto">{remindersError}</span>
-          )}
-          {microsoftError && (
-            <span className="text-[10px] text-red-500 ml-auto">{microsoftError}</span>
-          )}
-          {notesError && (
-            <span className="text-[10px] text-red-500 ml-auto">{notesError}</span>
-          )}
+      {/* Persistent export errors with retry */}
+      {exportErrors.length > 0 && (
+        <div className="px-3 py-2 space-y-1.5 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+          {exportErrors.map(error => (
+            <motion.div
+              key={error.type}
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="flex items-center gap-2 p-2 bg-red-500/10 border border-red-500/20 rounded-md"
+            >
+              <WarningIcon className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-medium text-red-500">
+                  {getErrorLabel(error.type)}
+                </p>
+                <p className="text-[10px] text-red-400 truncate">
+                  {error.message}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRetry(error.type)}
+                disabled={isRetrying === error.type}
+                className="text-[10px] px-2 py-0.5 h-6 text-red-500 hover:text-red-400 hover:bg-red-500/10"
+              >
+                {isRetrying === error.type ? (
+                  <span className="flex items-center gap-1">
+                    <LoadingSpinner className="w-3 h-3" />
+                    Retry...
+                  </span>
+                ) : (
+                  'Erneut'
+                )}
+              </Button>
+              <button
+                onClick={() => dismissError(error.type)}
+                className="p-1 text-red-500/60 hover:text-red-500 transition-colors"
+                title="Schließen"
+              >
+                <CloseIcon className="w-3 h-3" />
+              </button>
+            </motion.div>
+          ))}
         </div>
       )}
     </div>
@@ -713,6 +837,15 @@ function MailIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect width="20" height="16" x="2" y="4" rx="2" />
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+  )
+}
+
+function ClipboardIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
     </svg>
   )
 }
@@ -780,6 +913,34 @@ function NotesIcon({ className }: { className?: string }) {
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
       <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  )
+}
+
+function WarningIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" x2="12" y1="9" y2="13" />
+      <line x1="12" x2="12.01" y1="17" y2="17" />
+    </svg>
+  )
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" x2="6" y1="6" y2="18" />
+      <line x1="6" x2="18" y1="6" y2="18" />
+    </svg>
+  )
+}
+
+function LoadingSpinner({ className }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
     </svg>
   )
 }

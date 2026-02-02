@@ -1,10 +1,128 @@
 import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai'
+import { z } from 'zod'
 import type { OutputType, OutputVariant, Mode, GeneratedOutput } from '@/types/output'
 import type { KnowledgeReference } from '@/types/knowledge'
 import type { UserProfile } from '@/types/profile'
 import type { QuestionAnswer } from '@/types/daily-questions'
 import { buildProfileContext, buildFullProfileContext } from '@/lib/ai/profile-prompt'
 import { v4 as uuidv4 } from 'uuid'
+
+// ==================== ZOD SCHEMAS FOR AI OUTPUTS ====================
+
+const emailOutputSchema = z.object({
+  to: z.string().optional().default(''),
+  subject: z.string().optional().default(''),
+  body: z.string().optional().default(''),
+  greeting: z.string().optional().default('Sehr geehrte Damen und Herren,'),
+  closing: z.string().optional().default('Mit freundlichen Grüßen'),
+})
+
+const meetingNoteOutputSchema = z.object({
+  title: z.string().optional(),
+  date: z.string().optional(),
+  attendees: z.array(z.string()).optional().default([]),
+  topics: z.array(z.string()).optional().default([]),
+  decisions: z.array(z.string()).optional().default([]),
+  actionItems: z.array(z.object({
+    task: z.string(),
+    owner: z.string().optional(),
+    due: z.string().optional(),
+  })).optional().default([]),
+  notes: z.string().optional(),
+})
+
+const todoOutputSchema = z.object({
+  title: z.string().optional(),
+  items: z.array(z.object({
+    text: z.string(),
+    priority: z.enum(['high', 'medium', 'low']).optional().default('medium'),
+  })).optional().default([]),
+  deadline: z.string().nullable().optional(),
+  notes: z.string().optional(),
+})
+
+const noteOutputSchema = z.object({
+  title: z.string().optional(),
+  content: z.string().optional().default(''),
+  tags: z.array(z.string()).optional().default([]),
+  category: z.string().optional(),
+})
+
+const questionOutputSchema = z.object({
+  question: z.string().optional(),
+  answer: z.string().optional().default(''),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  sources: z.string().optional(),
+})
+
+const brainstormOutputSchema = z.object({
+  topic: z.string().optional(),
+  ideas: z.array(z.object({
+    title: z.string(),
+    description: z.string().optional(),
+  })).optional().default([]),
+  categories: z.array(z.string()).optional().default([]),
+})
+
+const summaryOutputSchema = z.object({
+  title: z.string().optional(),
+  keyPoints: z.array(z.string()).optional().default([]),
+  conclusion: z.string().optional(),
+  fullSummary: z.string().optional(),
+})
+
+const calendarOutputSchema = z.object({
+  event: z.object({
+    title: z.string(),
+    date: z.string(),
+    time: z.string(),
+    duration: z.number().optional().default(60),
+    notes: z.string().nullable().optional(),
+    location: z.string().nullable().optional(),
+    attendees: z.array(z.string()).optional().default([]),
+  }).optional(),
+  formatted: z.object({
+    dateDisplay: z.string(),
+    timeDisplay: z.string(),
+    durationDisplay: z.string(),
+  }).optional(),
+})
+
+const generalOutputSchema = z.object({
+  title: z.string().optional(),
+  content: z.string().optional().default(''),
+  summary: z.string().optional(),
+})
+
+// Map output type to its schema
+const outputSchemas: Record<OutputType, z.ZodType> = {
+  email: emailOutputSchema,
+  'meeting-note': meetingNoteOutputSchema,
+  todo: todoOutputSchema,
+  note: noteOutputSchema,
+  question: questionOutputSchema,
+  brainstorm: brainstormOutputSchema,
+  summary: summaryOutputSchema,
+  calendar: calendarOutputSchema,
+  general: generalOutputSchema,
+}
+
+/**
+ * Validate and parse AI-generated JSON with Zod
+ * Returns parsed object with defaults applied, or null if validation fails
+ */
+function validateAIOutput<T>(
+  rawData: unknown,
+  schema: z.ZodType<T>
+): T | null {
+  const result = schema.safeParse(rawData)
+  if (result.success) {
+    return result.data
+  }
+  // Log validation errors for debugging (but don't fail - graceful degradation)
+  console.warn('AI output validation warning:', result.error.flatten())
+  return null
+}
 
 let genAI: GoogleGenerativeAI | null = null
 let model: GenerativeModel | null = null
@@ -54,16 +172,20 @@ export interface GenerateOptions {
   profile?: UserProfile
   conversationContext?: string
   dailyQuestionsAnswers?: readonly QuestionAnswer[]
+  /** When true, only generate the specified variant instead of all three */
+  singleVariant?: boolean
 }
 
 export interface GenerateResult {
   outputs: {
-    short: GeneratedOutput
-    standard: GeneratedOutput
-    detailed: GeneratedOutput
+    short: GeneratedOutput | null
+    standard: GeneratedOutput | null
+    detailed: GeneratedOutput | null
   }
   detectedType: OutputType
   usedContext: readonly KnowledgeReference[]
+  /** When singleVariant was used, indicates which variant was generated */
+  generatedVariant?: OutputVariant
 }
 
 // Output type detection prompt
@@ -324,11 +446,17 @@ export async function generateOutput(
     ? buildFullProfileContext(options.profile, options.dailyQuestionsAnswers || [])
     : ''
 
-  // Generate all three variants
-  const variants: OutputVariant[] = ['short', 'standard', 'detailed']
-  const outputs: Record<OutputVariant, GeneratedOutput> = {} as Record<OutputVariant, GeneratedOutput>
+  // Determine which variants to generate
+  const variantsToGenerate: OutputVariant[] = options.singleVariant
+    ? [options.variant]
+    : ['short', 'standard', 'detailed']
+  const outputs: Record<OutputVariant, GeneratedOutput | null> = {
+    short: null,
+    standard: null,
+    detailed: null,
+  }
 
-  for (const variant of variants) {
+  for (const variant of variantsToGenerate) {
     // For questions, put context BEFORE the instructions so the AI sees it first
     const contextSection = contextString ? `
 === VERFÜGBARER KONTEXT ===
@@ -404,6 +532,7 @@ KRITISCH: Antworte AUSSCHLIESSLICH mit gültigem JSON. Kein Text davor oder dana
     },
     detectedType: outputType,
     usedContext: options.context || [],
+    ...(options.singleVariant && { generatedVariant: options.variant }),
   }
 }
 
@@ -415,7 +544,7 @@ interface ParsedOutput {
 
 function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
   // Try to parse as JSON
-  let parsed: Record<string, unknown> = {}
+  let rawParsed: unknown = null
 
   try {
     // Clean up potential markdown code blocks
@@ -428,7 +557,7 @@ function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
     if (jsonText.endsWith('```')) {
       jsonText = jsonText.slice(0, -3)
     }
-    parsed = JSON.parse(jsonText.trim())
+    rawParsed = JSON.parse(jsonText.trim())
   } catch {
     // If JSON parsing fails, return the raw text
     return {
@@ -438,191 +567,247 @@ function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
     }
   }
 
+  // Get the appropriate schema and validate
+  const schema = outputSchemas[type]
+  const validated = validateAIOutput(rawParsed, schema)
+
+  // If validation completely fails, fall back to raw parsed data
+  const parsed = validated ?? (rawParsed as Record<string, unknown>)
+
   // Format based on output type
   switch (type) {
     case 'email': {
-      const greeting = (parsed.greeting as string) || 'Sehr geehrte Damen und Herren,'
-      const body = (parsed.body as string) || ''
-      const closing = (parsed.closing as string) || 'Mit freundlichen Grüßen'
-
-      // Create a clean, copy-paste ready email body
-      const displayBody = `${greeting}\n\n${body}\n\n${closing}`
-
+      const emailData = emailOutputSchema.safeParse(parsed)
+      if (emailData.success) {
+        const { greeting, body, closing, subject } = emailData.data
+        const displayBody = `${greeting}\n\n${body}\n\n${closing}`
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody,
+          title: subject,
+        }
+      }
+      // Fallback for malformed email
       return {
-        structured: parsed,
-        displayBody,
-        title: parsed.subject as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'meeting-note': {
-      const lines: string[] = []
-      if (parsed.date) lines.push(`Datum: ${parsed.date}`)
-      if (parsed.attendees && Array.isArray(parsed.attendees)) {
-        lines.push(`Teilnehmer: ${(parsed.attendees as string[]).join(', ')}`)
-      }
-      lines.push('')
-      if (parsed.topics && Array.isArray(parsed.topics)) {
-        lines.push('Themen:')
-        ;(parsed.topics as string[]).forEach(t => lines.push(`• ${t}`))
+      const noteData = meetingNoteOutputSchema.safeParse(parsed)
+      if (noteData.success) {
+        const { title, date, attendees, topics, decisions, actionItems, notes } = noteData.data
+        const lines: string[] = []
+        if (date) lines.push(`Datum: ${date}`)
+        if (attendees.length > 0) {
+          lines.push(`Teilnehmer: ${attendees.join(', ')}`)
+        }
         lines.push('')
+        if (topics.length > 0) {
+          lines.push('Themen:')
+          topics.forEach(t => lines.push(`• ${t}`))
+          lines.push('')
+        }
+        if (decisions.length > 0) {
+          lines.push('Entscheidungen:')
+          decisions.forEach(d => lines.push(`• ${d}`))
+          lines.push('')
+        }
+        if (actionItems.length > 0) {
+          lines.push('Action Items:')
+          actionItems.forEach(item => {
+            let line = `• ${item.task}`
+            if (item.owner) line += ` → ${item.owner}`
+            if (item.due) line += ` (bis ${item.due})`
+            lines.push(line)
+          })
+        }
+        if (notes) {
+          lines.push('')
+          lines.push(notes)
+        }
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n'),
+          title,
+        }
       }
-      if (parsed.decisions && Array.isArray(parsed.decisions) && (parsed.decisions as string[]).length > 0) {
-        lines.push('Entscheidungen:')
-        ;(parsed.decisions as string[]).forEach(d => lines.push(`• ${d}`))
-        lines.push('')
-      }
-      if (parsed.actionItems && Array.isArray(parsed.actionItems)) {
-        lines.push('Action Items:')
-        ;(parsed.actionItems as Array<{task: string; owner?: string; due?: string}>).forEach(item => {
-          let line = `• ${item.task}`
-          if (item.owner) line += ` → ${item.owner}`
-          if (item.due) line += ` (bis ${item.due})`
-          lines.push(line)
-        })
-      }
-      if (parsed.notes) {
-        lines.push('')
-        lines.push(parsed.notes as string)
-      }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: parsed.title as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'todo': {
-      const lines: string[] = []
-      if (parsed.items && Array.isArray(parsed.items)) {
-        ;(parsed.items as Array<{text: string; priority?: string}>).forEach(item => {
+      const todoData = todoOutputSchema.safeParse(parsed)
+      if (todoData.success) {
+        const { title, items, deadline, notes } = todoData.data
+        const lines: string[] = []
+        items.forEach(item => {
           const priority = item.priority === 'high' ? '❗' : item.priority === 'medium' ? '•' : '○'
           lines.push(`${priority} ${item.text}`)
         })
+        if (deadline) {
+          lines.push('')
+          lines.push(`Deadline: ${deadline}`)
+        }
+        if (notes) {
+          lines.push('')
+          lines.push(notes)
+        }
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n'),
+          title,
+        }
       }
-      if (parsed.deadline) {
-        lines.push('')
-        lines.push(`Deadline: ${parsed.deadline}`)
-      }
-      if (parsed.notes) {
-        lines.push('')
-        lines.push(parsed.notes as string)
-      }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: parsed.title as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'question': {
+      const questionData = questionOutputSchema.safeParse(parsed)
+      if (questionData.success) {
+        const { question, answer } = questionData.data
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: answer || text,
+          title: question,
+        }
+      }
       return {
-        structured: parsed,
-        displayBody: (parsed.answer as string) || text,
-        title: parsed.question as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'note': {
-      const lines: string[] = []
-      if (parsed.content) {
-        lines.push(parsed.content as string)
+      const noteData = noteOutputSchema.safeParse(parsed)
+      if (noteData.success) {
+        const { title, content, tags, category } = noteData.data
+        const lines: string[] = []
+        if (content) {
+          lines.push(content)
+        }
+        if (tags.length > 0) {
+          lines.push('')
+          lines.push(`Tags: ${tags.join(', ')}`)
+        }
+        if (category) {
+          lines.push(`Kategorie: ${category}`)
+        }
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n') || text,
+          title,
+        }
       }
-      if (parsed.tags && Array.isArray(parsed.tags) && (parsed.tags as string[]).length > 0) {
-        lines.push('')
-        lines.push(`Tags: ${(parsed.tags as string[]).join(', ')}`)
-      }
-      if (parsed.category) {
-        lines.push(`Kategorie: ${parsed.category}`)
-      }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n') || text,
-        title: parsed.title as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'brainstorm': {
-      const lines: string[] = []
-      if (parsed.ideas && Array.isArray(parsed.ideas)) {
-        ;(parsed.ideas as Array<{title: string; description?: string}>).forEach((idea, i) => {
+      const brainstormData = brainstormOutputSchema.safeParse(parsed)
+      if (brainstormData.success) {
+        const { topic, ideas } = brainstormData.data
+        const lines: string[] = []
+        ideas.forEach((idea, i) => {
           lines.push(`${i + 1}. ${idea.title}`)
           if (idea.description) lines.push(`   ${idea.description}`)
         })
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n'),
+          title: topic,
+        }
       }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: parsed.topic as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'summary': {
-      const lines: string[] = []
-      if (parsed.keyPoints && Array.isArray(parsed.keyPoints)) {
-        ;(parsed.keyPoints as string[]).forEach(point => lines.push(`• ${point}`))
+      const summaryData = summaryOutputSchema.safeParse(parsed)
+      if (summaryData.success) {
+        const { title, keyPoints, conclusion, fullSummary } = summaryData.data
+        const lines: string[] = []
+        keyPoints.forEach(point => lines.push(`• ${point}`))
+        if (conclusion) {
+          lines.push('')
+          lines.push(`Fazit: ${conclusion}`)
+        }
+        if (fullSummary) {
+          lines.push('')
+          lines.push(fullSummary)
+        }
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n'),
+          title,
+        }
       }
-      if (parsed.conclusion) {
-        lines.push('')
-        lines.push(`Fazit: ${parsed.conclusion}`)
-      }
-      if (parsed.fullSummary) {
-        lines.push('')
-        lines.push(parsed.fullSummary as string)
-      }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: parsed.title as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
 
     case 'calendar': {
-      const event = parsed.event as {
-        title: string
-        date: string
-        time: string
-        duration: number
-        notes?: string
-        location?: string
-        attendees?: string[]
+      const calendarData = calendarOutputSchema.safeParse(parsed)
+      if (calendarData.success) {
+        const { event, formatted } = calendarData.data
+        const lines: string[] = []
+        if (event?.title) lines.push(event.title)
+        if (formatted?.dateDisplay) lines.push(`📅 ${formatted.dateDisplay}`)
+        if (formatted?.timeDisplay) lines.push(`🕐 ${formatted.timeDisplay}`)
+        if (event?.location) lines.push(`📍 ${event.location}`)
+        if (event?.attendees && event.attendees.length > 0) {
+          lines.push(`👥 ${event.attendees.join(', ')}`)
+        }
+        if (event?.notes) {
+          lines.push('')
+          lines.push(event.notes)
+        }
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: lines.join('\n'),
+          title: event?.title || 'Neuer Termin',
+        }
       }
-      const formatted = parsed.formatted as {
-        dateDisplay: string
-        timeDisplay: string
-        durationDisplay: string
-      }
-
-      const lines: string[] = []
-      if (event?.title) lines.push(event.title)
-      if (formatted?.dateDisplay) lines.push(`📅 ${formatted.dateDisplay}`)
-      if (formatted?.timeDisplay) lines.push(`🕐 ${formatted.timeDisplay}`)
-      if (event?.location) lines.push(`📍 ${event.location}`)
-      if (event?.attendees && event.attendees.length > 0) {
-        lines.push(`👥 ${event.attendees.join(', ')}`)
-      }
-      if (event?.notes) {
-        lines.push('')
-        lines.push(event.notes)
-      }
-
       return {
-        structured: parsed,
-        displayBody: lines.join('\n'),
-        title: event?.title || 'Neuer Termin',
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: 'Neuer Termin',
       }
     }
 
     default: {
+      const generalData = generalOutputSchema.safeParse(parsed)
+      if (generalData.success) {
+        const { title, content, summary } = generalData.data
+        return {
+          structured: parsed as Record<string, unknown>,
+          displayBody: content || summary || text,
+          title,
+        }
+      }
       return {
-        structured: parsed,
-        displayBody: (parsed.content as string) || (parsed.fullSummary as string) || text,
-        title: parsed.title as string,
+        structured: parsed as Record<string, unknown>,
+        displayBody: text,
+        title: undefined,
       }
     }
   }

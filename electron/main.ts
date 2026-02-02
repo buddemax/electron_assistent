@@ -128,32 +128,115 @@ function updateTrayMenu(): void {
   tray.setContextMenu(contextMenu)
 }
 
-function registerGlobalShortcuts(): void {
-  // Main activation: Cmd+Shift+Space (Mac) / Ctrl+Shift+Space (Windows/Linux)
-  const activateShortcut = process.platform === 'darwin' ? 'Command+Shift+Space' : 'Control+Shift+Space'
+// Hotkey configuration interface
+interface HotkeyConfig {
+  key: string
+  modifiers: string[]
+  enabled: boolean
+}
 
-  globalShortcut.register(activateShortcut, () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide()
-    } else {
-      mainWindow?.show()
-      mainWindow?.focus()
-      mainWindow?.webContents.send('hotkey-activate')
+interface HotkeySettings {
+  activate: HotkeyConfig
+  toggleMode: HotkeyConfig
+  stopRecording: HotkeyConfig
+  copyOutput: HotkeyConfig
+}
+
+// Default hotkey settings
+const DEFAULT_HOTKEYS: HotkeySettings = {
+  activate: { key: 'Space', modifiers: ['meta', 'shift'], enabled: true },
+  toggleMode: { key: 'M', modifiers: ['meta', 'shift'], enabled: true },
+  stopRecording: { key: 'Escape', modifiers: [], enabled: true },
+  copyOutput: { key: 'C', modifiers: ['meta'], enabled: true },
+}
+
+/**
+ * Convert HotkeyConfig to Electron accelerator string
+ */
+function hotkeyToAccelerator(config: HotkeyConfig): string {
+  const parts: string[] = []
+
+  for (const mod of config.modifiers) {
+    switch (mod) {
+      case 'meta':
+        parts.push(process.platform === 'darwin' ? 'Command' : 'Super')
+        break
+      case 'ctrl':
+        parts.push('Control')
+        break
+      case 'alt':
+        parts.push('Alt')
+        break
+      case 'shift':
+        parts.push('Shift')
+        break
     }
-  })
+  }
 
-  // Save only: Cmd+Shift+Alt+Space
+  // Convert key names to Electron format
+  let key = config.key
+  if (key === 'Space') key = 'Space'
+  else if (key === 'Escape') key = 'Escape'
+  else if (key.length === 1) key = key.toUpperCase()
+
+  parts.push(key)
+  return parts.join('+')
+}
+
+/**
+ * Get stored hotkey settings or defaults
+ */
+function getHotkeySettings(): HotkeySettings {
+  const stored = store.get('hotkeys') as HotkeySettings | undefined
+  return stored ?? DEFAULT_HOTKEYS
+}
+
+/**
+ * Register global shortcuts based on stored settings
+ */
+function registerGlobalShortcuts(): void {
+  // Unregister all existing shortcuts first
+  globalShortcut.unregisterAll()
+
+  const hotkeys = getHotkeySettings()
+
+  // Main activation shortcut
+  if (hotkeys.activate.enabled) {
+    const activateAccelerator = hotkeyToAccelerator(hotkeys.activate)
+    const registered = globalShortcut.register(activateAccelerator, () => {
+      if (mainWindow?.isVisible()) {
+        mainWindow.hide()
+      } else {
+        mainWindow?.show()
+        mainWindow?.focus()
+        mainWindow?.webContents.send('hotkey-activate')
+      }
+    })
+    if (!registered) {
+      console.warn(`Failed to register activate shortcut: ${activateAccelerator}`)
+    }
+  }
+
+  // Toggle mode shortcut
+  if (hotkeys.toggleMode.enabled) {
+    const toggleAccelerator = hotkeyToAccelerator(hotkeys.toggleMode)
+    const registered = globalShortcut.register(toggleAccelerator, () => {
+      mainWindow?.webContents.send('hotkey-toggle-mode')
+    })
+    if (!registered) {
+      console.warn(`Failed to register toggle mode shortcut: ${toggleAccelerator}`)
+    }
+  }
+
+  // Additional shortcuts (save-only, query-only) with fixed accelerators
   const saveOnlyShortcut = process.platform === 'darwin' ? 'Command+Shift+Alt+Space' : 'Control+Shift+Alt+Space'
-
   globalShortcut.register(saveOnlyShortcut, () => {
     mainWindow?.show()
     mainWindow?.focus()
     mainWindow?.webContents.send('hotkey-save-only')
   })
 
-  // Query only: Cmd+Shift+Ctrl+Space (Mac) / Ctrl+Shift+Win+Space won't work, use different combo
   const queryOnlyShortcut = process.platform === 'darwin' ? 'Command+Control+Space' : 'Control+Alt+Space'
-
   globalShortcut.register(queryOnlyShortcut, () => {
     mainWindow?.show()
     mainWindow?.focus()
@@ -183,6 +266,17 @@ function setupIpcHandlers(): void {
   ipcMain.handle('store-delete', (_event, key: string) => {
     store.delete(key)
     return true
+  })
+
+  // Hotkey management
+  ipcMain.handle('hotkeys-update', (_event, hotkeys: HotkeySettings) => {
+    store.set('hotkeys', hotkeys)
+    registerGlobalShortcuts() // Re-register with new settings
+    return true
+  })
+
+  ipcMain.handle('hotkeys-get', () => {
+    return getHotkeySettings()
   })
 
   // Clipboard

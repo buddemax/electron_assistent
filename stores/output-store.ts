@@ -47,8 +47,18 @@ interface OutputState {
 
   // Generation State
   isGenerating: boolean
+  isGeneratingVariant: boolean
   generationProgress: number
   abortController: AbortController | null
+
+  // Store original request for on-demand variant generation
+  lastRequest: {
+    transcription: string
+    mode: Mode
+    profile?: UserProfile
+    conversationContext?: string
+    dailyQuestionsAnswers?: readonly QuestionAnswer[]
+  } | null
 
   // History
   outputHistory: readonly GeneratedOutput[]
@@ -69,6 +79,7 @@ interface OutputState {
   clearHistory: () => void
   reset: () => void
   generateOutput: (transcription: string, mode?: Mode, context?: readonly KnowledgeReference[], profile?: UserProfile, conversationContext?: string, dailyQuestionsAnswers?: readonly QuestionAnswer[]) => Promise<void>
+  generateVariant: (variant: OutputVariant) => Promise<void>
   fetchContext: (query: string, mode: Mode, entries: readonly import('@/types/knowledge').KnowledgeEntry[], documents?: readonly import('@/types/document').DocumentEntry[], conversation?: Conversation | null) => Promise<ContextState>
   cancelGeneration: () => void
 }
@@ -89,8 +100,10 @@ const initialState = {
   detectedType: null,
   contextState: initialContextState,
   isGenerating: false,
+  isGeneratingVariant: false,
   generationProgress: 0,
   abortController: null as AbortController | null,
+  lastRequest: null as OutputState['lastRequest'],
   outputHistory: [] as readonly GeneratedOutput[],
 }
 
@@ -105,11 +118,28 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
       currentOutput: outputVariants[state.selectedVariant],
     })),
 
-  setSelectedVariant: (selectedVariant) =>
-    set((state) => ({
-      selectedVariant,
-      currentOutput: state.outputVariants[selectedVariant],
-    })),
+  setSelectedVariant: (selectedVariant) => {
+    const state = get()
+    const existingVariant = state.outputVariants[selectedVariant]
+
+    if (existingVariant) {
+      // Variant exists, just select it
+      set({
+        selectedVariant,
+        currentOutput: existingVariant,
+      })
+    } else if (state.lastRequest && !state.isGeneratingVariant) {
+      // Variant doesn't exist, trigger on-demand generation
+      set({ selectedVariant })
+      get().generateVariant(selectedVariant).catch((err) => {
+        // Error is handled in generateVariant, just log it
+        console.error('Failed to generate variant:', err)
+      })
+    } else {
+      // No lastRequest or already generating, just set the selected variant
+      set({ selectedVariant })
+    }
+  },
 
   setDetectedType: (detectedType) => set({ detectedType }),
 
@@ -144,8 +174,10 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
       detectedType: null,
       contextState: initialContextState,
       isGenerating: false,
+      isGeneratingVariant: false,
       generationProgress: 0,
       abortController: null,
+      lastRequest: null,
     }),
 
   fetchContext: async (
@@ -211,6 +243,17 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
         ? mapOutputLengthToVariant(profile.preferredOutputLength)
         : get().selectedVariant
 
+      // Store request for later on-demand variant generation
+      set({
+        lastRequest: {
+          transcription,
+          mode,
+          profile,
+          conversationContext: convContext,
+          dailyQuestionsAnswers,
+        },
+      })
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -218,6 +261,7 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
           transcription,
           mode,
           variant: preferredVariant,
+          singleVariant: true, // Only generate the preferred variant
           context: context.length > 0 ? context : undefined,
           profile,
           conversationContext: convContext,
@@ -238,12 +282,16 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
 
       if (result.success && result.data?.outputs) {
         const outputs = result.data.outputs as {
-          short: GeneratedOutput
-          standard: GeneratedOutput
-          detailed: GeneratedOutput
+          short: GeneratedOutput | null
+          standard: GeneratedOutput | null
+          detailed: GeneratedOutput | null
         }
         // Use the preferred variant from profile
         const currentOutput = outputs[preferredVariant]
+
+        if (!currentOutput) {
+          throw new Error('Generierte Variante nicht gefunden')
+        }
 
         set({
           outputVariants: outputs,
@@ -269,6 +317,79 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
     }
   },
 
+  generateVariant: async (variant: OutputVariant) => {
+    const { lastRequest, outputVariants, contextState } = get()
+
+    // If variant already exists, just select it
+    if (outputVariants[variant]) {
+      set({
+        selectedVariant: variant,
+        currentOutput: outputVariants[variant],
+      })
+      return
+    }
+
+    // Need lastRequest to generate a new variant
+    if (!lastRequest) {
+      throw new Error('Keine vorherige Anfrage zum Generieren einer Variante')
+    }
+
+    set({ isGeneratingVariant: true })
+
+    try {
+      const context = contextState.context
+
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcription: lastRequest.transcription,
+          mode: lastRequest.mode,
+          variant,
+          singleVariant: true,
+          context: context.length > 0 ? context : undefined,
+          profile: lastRequest.profile,
+          conversationContext: lastRequest.conversationContext,
+          dailyQuestionsAnswers: lastRequest.dailyQuestionsAnswers?.map((a) => ({
+            ...a,
+            answeredAt: a.answeredAt.toISOString(),
+          })),
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error?.message || 'Varianten-Generierung fehlgeschlagen')
+      }
+
+      const result = await response.json()
+
+      if (result.success && result.data?.outputs) {
+        const generatedOutput = result.data.outputs[variant] as GeneratedOutput | null
+
+        if (!generatedOutput) {
+          throw new Error('Generierte Variante nicht gefunden')
+        }
+
+        // Update the variants with the newly generated one
+        set((state) => ({
+          outputVariants: {
+            ...state.outputVariants,
+            [variant]: generatedOutput,
+          },
+          currentOutput: generatedOutput,
+          selectedVariant: variant,
+          isGeneratingVariant: false,
+        }))
+      } else {
+        throw new Error(result.error?.message || 'Keine Ausgabe erhalten')
+      }
+    } catch (err) {
+      set({ isGeneratingVariant: false })
+      throw err
+    }
+  },
+
   cancelGeneration: () => {
     const { abortController } = get()
     if (abortController) {
@@ -281,5 +402,6 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
 // Selectors
 export const selectCurrentOutput = (state: OutputState) => state.currentOutput
 export const selectIsGenerating = (state: OutputState) => state.isGenerating
+export const selectIsGeneratingVariant = (state: OutputState) => state.isGeneratingVariant
 export const selectOutputByVariant = (variant: OutputVariant) => (state: OutputState) =>
   state.outputVariants[variant]

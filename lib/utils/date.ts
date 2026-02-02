@@ -13,6 +13,136 @@ const GERMAN_DAYS: Record<string, number> = {
 }
 
 /**
+ * Pattern matchers for relative date expressions
+ */
+interface RelativeTimePattern {
+  pattern: RegExp
+  resolver: (match: RegExpMatchArray, now: Date) => Date
+}
+
+const RELATIVE_PATTERNS: RelativeTimePattern[] = [
+  // "in X Tagen"
+  {
+    pattern: /^in\s+(\d+)\s+tag(?:en)?$/i,
+    resolver: (match, now) => {
+      const days = parseInt(match[1], 10)
+      const target = new Date(now)
+      target.setDate(now.getDate() + days)
+      return target
+    }
+  },
+  // "in X Wochen"
+  {
+    pattern: /^in\s+(\d+)\s+woche(?:n)?$/i,
+    resolver: (match, now) => {
+      const weeks = parseInt(match[1], 10)
+      const target = new Date(now)
+      target.setDate(now.getDate() + weeks * 7)
+      return target
+    }
+  },
+  // "in X Monaten"
+  {
+    pattern: /^in\s+(\d+)\s+monat(?:en)?$/i,
+    resolver: (match, now) => {
+      const months = parseInt(match[1], 10)
+      const target = new Date(now)
+      target.setMonth(now.getMonth() + months)
+      return target
+    }
+  },
+  // "nächsten Montag/Dienstag/..." or "nächster Montag"
+  {
+    pattern: /^n[aä]chste[rn]?\s+(\w+)$/i,
+    resolver: (match, now) => {
+      const dayName = match[1].toLowerCase()
+      const targetDay = GERMAN_DAYS[dayName]
+      if (targetDay === undefined) return now
+
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      let daysUntil = (targetDay - currentDay + 7) % 7
+      if (daysUntil === 0) daysUntil = 7 // Next week, not today
+
+      target.setDate(now.getDate() + daysUntil)
+      return target
+    }
+  },
+  // "übernächsten Montag/..." or "übernächster Montag"
+  {
+    pattern: /^[uü]bern[aä]chste[rn]?\s+(\w+)$/i,
+    resolver: (match, now) => {
+      const dayName = match[1].toLowerCase()
+      const targetDay = GERMAN_DAYS[dayName]
+      if (targetDay === undefined) return now
+
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      let daysUntil = (targetDay - currentDay + 7) % 7
+      if (daysUntil === 0) daysUntil = 7
+      daysUntil += 7 // One week further
+
+      target.setDate(now.getDate() + daysUntil)
+      return target
+    }
+  },
+  // "am Montag/Dienstag/..." (without "nächsten")
+  {
+    pattern: /^am\s+(\w+)$/i,
+    resolver: (match, now) => {
+      const dayName = match[1].toLowerCase()
+      const targetDay = GERMAN_DAYS[dayName]
+      if (targetDay === undefined) return now
+
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      let daysUntil = (targetDay - currentDay + 7) % 7
+      if (daysUntil === 0) daysUntil = 7
+
+      target.setDate(now.getDate() + daysUntil)
+      return target
+    }
+  },
+  // "Ende der Woche" / "Wochenende" / "Ende Woche"
+  {
+    pattern: /^(?:ende\s+(?:der\s+)?woche|wochenende)$/i,
+    resolver: (_, now) => {
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      // Friday = 5
+      const daysUntilFriday = (5 - currentDay + 7) % 7 || 7
+      target.setDate(now.getDate() + daysUntilFriday)
+      return target
+    }
+  },
+  // "Anfang nächster Woche" / "Anfang der Woche"
+  {
+    pattern: /^anfang\s+(?:n[aä]chster?\s+)?woche$/i,
+    resolver: (_, now) => {
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      // Monday = 1
+      const daysUntilMonday = (1 - currentDay + 7) % 7 || 7
+      target.setDate(now.getDate() + daysUntilMonday)
+      return target
+    }
+  },
+  // "Mitte der Woche" / "Mitte nächster Woche"
+  {
+    pattern: /^mitte\s+(?:(?:der|n[aä]chster?)\s+)?woche$/i,
+    resolver: (_, now) => {
+      const target = new Date(now)
+      const currentDay = now.getDay()
+      // Wednesday = 3
+      let daysUntilWednesday = (3 - currentDay + 7) % 7
+      if (daysUntilWednesday <= 0) daysUntilWednesday += 7
+      target.setDate(now.getDate() + daysUntilWednesday)
+      return target
+    }
+  },
+]
+
+/**
  * Resolve a relative or absolute date string to a Date object
  */
 export function resolveDate(dateStr: string, timeStr: string): Date {
@@ -24,63 +154,83 @@ export function resolveDate(dateStr: string, timeStr: string): Date {
 
   const lowerDate = dateStr.toLowerCase().trim()
 
-  // Handle relative dates
+  // Handle simple relative dates
   if (lowerDate === 'heute') {
     // Keep today
   } else if (lowerDate === 'morgen') {
     targetDate.setDate(now.getDate() + 1)
   } else if (lowerDate === 'übermorgen') {
     targetDate.setDate(now.getDate() + 2)
-  } else if (lowerDate.startsWith('nächste woche')) {
-    // Next week - add 7 days
-    targetDate.setDate(now.getDate() + 7)
+  } else {
+    // Try extended relative patterns first
+    let matched = false
 
-    // Check if there's a day name after "nächste woche"
-    const parts = lowerDate.split(' ')
-    if (parts.length >= 3) {
-      const dayName = parts[2]
-      if (GERMAN_DAYS[dayName] !== undefined) {
-        const targetDay = GERMAN_DAYS[dayName]
-        const currentDay = targetDate.getDay()
-        const diff = (targetDay - currentDay + 7) % 7
-        targetDate.setDate(targetDate.getDate() + diff)
+    for (const { pattern, resolver } of RELATIVE_PATTERNS) {
+      const match = lowerDate.match(pattern)
+      if (match) {
+        const resolved = resolver(match, now)
+        targetDate.setFullYear(resolved.getFullYear())
+        targetDate.setMonth(resolved.getMonth())
+        targetDate.setDate(resolved.getDate())
+        matched = true
+        break
       }
     }
-  } else if (GERMAN_DAYS[lowerDate] !== undefined) {
-    // Day name (Montag, Dienstag, etc.)
-    const targetDay = GERMAN_DAYS[lowerDate]
-    const currentDay = now.getDay()
-    let daysUntil = (targetDay - currentDay + 7) % 7
 
-    // If it's the same day and past noon, assume next week
-    if (daysUntil === 0) {
-      daysUntil = 7
+    if (!matched) {
+      // Handle "nächste woche" with optional day name
+      if (lowerDate.startsWith('nächste woche')) {
+        // Next week - add 7 days
+        targetDate.setDate(now.getDate() + 7)
+
+        // Check if there's a day name after "nächste woche"
+        const parts = lowerDate.split(' ')
+        if (parts.length >= 3) {
+          const dayName = parts[2]
+          if (GERMAN_DAYS[dayName] !== undefined) {
+            const targetDay = GERMAN_DAYS[dayName]
+            const currentDay = targetDate.getDay()
+            const diff = (targetDay - currentDay + 7) % 7
+            targetDate.setDate(targetDate.getDate() + diff)
+          }
+        }
+      } else if (GERMAN_DAYS[lowerDate] !== undefined) {
+        // Day name (Montag, Dienstag, etc.)
+        const targetDay = GERMAN_DAYS[lowerDate]
+        const currentDay = now.getDay()
+        let daysUntil = (targetDay - currentDay + 7) % 7
+
+        // If it's the same day, assume next week
+        if (daysUntil === 0) {
+          daysUntil = 7
+        }
+
+        targetDate.setDate(now.getDate() + daysUntil)
+      } else if (lowerDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        // ISO date format
+        const parsed = new Date(dateStr)
+        if (!isNaN(parsed.getTime())) {
+          targetDate.setFullYear(parsed.getFullYear())
+          targetDate.setMonth(parsed.getMonth())
+          targetDate.setDate(parsed.getDate())
+        }
+      } else if (lowerDate.match(/^\d{1,2}\.\d{1,2}\.(\d{2,4})?$/)) {
+        // German date format (DD.MM. or DD.MM.YYYY)
+        const parts = lowerDate.split('.')
+        const day = parseInt(parts[0], 10)
+        const month = parseInt(parts[1], 10) - 1
+        let year = now.getFullYear()
+
+        if (parts[2]) {
+          year = parseInt(parts[2], 10)
+          if (year < 100) year += 2000
+        }
+
+        targetDate.setFullYear(year)
+        targetDate.setMonth(month)
+        targetDate.setDate(day)
+      }
     }
-
-    targetDate.setDate(now.getDate() + daysUntil)
-  } else if (lowerDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    // ISO date format
-    const parsed = new Date(dateStr)
-    if (!isNaN(parsed.getTime())) {
-      targetDate.setFullYear(parsed.getFullYear())
-      targetDate.setMonth(parsed.getMonth())
-      targetDate.setDate(parsed.getDate())
-    }
-  } else if (lowerDate.match(/^\d{1,2}\.\d{1,2}\.(\d{2,4})?$/)) {
-    // German date format (DD.MM. or DD.MM.YYYY)
-    const parts = lowerDate.split('.')
-    const day = parseInt(parts[0], 10)
-    const month = parseInt(parts[1], 10) - 1
-    let year = now.getFullYear()
-
-    if (parts[2]) {
-      year = parseInt(parts[2], 10)
-      if (year < 100) year += 2000
-    }
-
-    targetDate.setFullYear(year)
-    targetDate.setMonth(month)
-    targetDate.setDate(day)
   }
 
   // Parse time
