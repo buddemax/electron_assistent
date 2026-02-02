@@ -10,6 +10,7 @@ import {
   hasQuestionsAvailable,
   getQuestionsProgress,
 } from './question-selector'
+import { validateAnswer } from './answer-validator'
 
 export interface UseDailyQuestionsReturn {
   readonly shouldShow: boolean
@@ -32,13 +33,16 @@ export function useDailyQuestions(): UseDailyQuestionsReturn {
     dailyQuestions,
     onboardingComplete,
     addQuestionAnswer,
+    markSessionQuestionAnswered,
     dismissDailyQuestions,
     setSessionQuestions,
   } = useAppStore()
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [sessionAnswers, setSessionAnswers] = useState<readonly string[]>([])
   const initializedRef = useRef(false)
+
+  // Session answers now come from persisted store (with fallback for old localStorage data)
+  const sessionAnswers = dailyQuestions.currentSessionAnsweredIds ?? []
 
   // Get current session questions
   const questions = useMemo(() => {
@@ -118,6 +122,12 @@ export function useDailyQuestions(): UseDailyQuestionsReturn {
   // Handle answering a question
   const onAnswer = useCallback(
     (questionId: string, answer: string | readonly string[]) => {
+      // Validate answer before saving
+      const validation = validateAnswer(questionId, answer)
+      if (!validation.isValid) {
+        return // Don't save invalid answers
+      }
+
       const questionAnswer: QuestionAnswer = {
         questionId,
         answer,
@@ -125,14 +135,14 @@ export function useDailyQuestions(): UseDailyQuestionsReturn {
       }
 
       addQuestionAnswer(questionAnswer)
-      setSessionAnswers((prev) => [...prev, questionId])
+      markSessionQuestionAnswered(questionId)
 
       // Move to next question if available
       if (currentQuestionIndex < questions.length - 1) {
         setCurrentQuestionIndex((prev) => prev + 1)
       }
     },
-    [addQuestionAnswer, currentQuestionIndex, questions.length]
+    [addQuestionAnswer, markSessionQuestionAnswered, currentQuestionIndex, questions.length]
   )
 
   // Handle dismissing for today
@@ -143,7 +153,6 @@ export function useDailyQuestions(): UseDailyQuestionsReturn {
   // Handle completing all questions
   const onComplete = useCallback(() => {
     dismissDailyQuestions()
-    setSessionAnswers([])
     setCurrentQuestionIndex(0)
   }, [dismissDailyQuestions])
 

@@ -12,6 +12,22 @@ export type TechnicalLevel = 'non-technical' | 'some-technical' | 'technical' | 
 
 export type OutputLength = 'concise' | 'balanced' | 'detailed'
 
+/**
+ * Extended profile data gathered from daily questions
+ */
+export interface ExtendedProfileData {
+  readonly arbeitsmotivation?: string
+  readonly teamarbeitPraeferenz?: string
+  readonly fuehrungsverantwortung?: string
+  readonly remoteArbeit?: string
+  readonly tageszeitTyp?: string
+  readonly kommunikationsPraeferenz?: string
+  readonly produktivsteZeit?: string
+  readonly tagesplanung?: string
+  readonly stressbewaeltigung?: string
+  readonly lernstil?: string
+}
+
 export interface UserProfile {
   readonly jobRole: string | null
   readonly industry: string | null
@@ -21,6 +37,7 @@ export interface UserProfile {
   readonly primaryUseCase: PrimaryUseCase | null
   readonly technicalLevel: TechnicalLevel | null
   readonly preferredOutputLength: OutputLength
+  readonly extendedData?: ExtendedProfileData
 }
 
 export interface OnboardingOption {
@@ -48,4 +65,5 @@ export const DEFAULT_USER_PROFILE: UserProfile = {
   primaryUseCase: null,
   technicalLevel: null,
   preferredOutputLength: 'balanced',
+  extendedData: {},
 }

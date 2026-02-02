@@ -1,4 +1,6 @@
 export { QUESTION_POOL, getAllQuestions, getQuestionById, getQuestionsByCategory, getUnansweredQuestions } from './question-pool'
 export { selectQuestionsForSession, shouldStartNewSession, hasQuestionsAvailable, getQuestionsProgress } from './question-selector'
+export { validateAnswer, validateAnswerForQuestion } from './answer-validator'
+export type { ValidationResult } from './answer-validator'
 export { useDailyQuestions } from './use-daily-questions'
 export type { UseDailyQuestionsReturn } from './use-daily-questions'

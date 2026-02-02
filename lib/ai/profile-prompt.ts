@@ -3,6 +3,7 @@ import type {
   FormalityLevel,
   TechnicalLevel,
   OutputLength,
+  ExtendedProfileData,
 } from '@/types/profile'
 import type { QuestionAnswer, QuestionCategory } from '@/types/daily-questions'
 import { getQuestionById } from '@/lib/daily-questions/question-pool'
@@ -81,6 +82,30 @@ export function buildProfileContext(profile: UserProfile): string {
     parts.push(OUTPUT_LENGTH_DESCRIPTIONS[profile.preferredOutputLength])
   }
 
+  // Add extended profile data from daily questions
+  if (profile.extendedData) {
+    const extended = profile.extendedData
+    const extendedLabels: Record<keyof ExtendedProfileData, string> = {
+      arbeitsmotivation: 'Arbeitsmotivation',
+      teamarbeitPraeferenz: 'Teamarbeit-Präferenz',
+      fuehrungsverantwortung: 'Führungsverantwortung',
+      remoteArbeit: 'Remote-Arbeit',
+      tageszeitTyp: 'Tageszeit-Typ',
+      kommunikationsPraeferenz: 'Kommunikations-Präferenz',
+      produktivsteZeit: 'Produktivste Zeit',
+      tagesplanung: 'Tagesplanung',
+      stressbewaeltigung: 'Stressbewältigung',
+      lernstil: 'Lernstil',
+    }
+
+    for (const [key, label] of Object.entries(extendedLabels)) {
+      const value = extended[key as keyof ExtendedProfileData]
+      if (value) {
+        parts.push(`${label}: ${value}`)
+      }
+    }
+  }
+
   if (parts.length === 0) {
     return ''
   }
@@ -89,6 +114,9 @@ export function buildProfileContext(profile: UserProfile): string {
 }
 
 export function hasProfileData(profile: UserProfile): boolean {
+  const hasExtendedData =
+    profile.extendedData && Object.values(profile.extendedData).some(Boolean)
+
   return (
     profile.jobRole !== null ||
     profile.industry !== null ||
@@ -97,7 +125,8 @@ export function hasProfileData(profile: UserProfile): boolean {
     profile.primaryUseCase !== null ||
     profile.technicalLevel !== null ||
     profile.formalityLevel !== 'neutral' ||
-    profile.preferredOutputLength !== 'balanced'
+    profile.preferredOutputLength !== 'balanced' ||
+    hasExtendedData === true
   )
 }
 

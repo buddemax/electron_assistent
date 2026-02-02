@@ -15,6 +15,7 @@ import {
   serializeAnswers,
   deserializeAnswers,
 } from '@/types/daily-questions'
+import { buildProfileUpdate } from '@/lib/daily-questions/profile-sync'
 
 export type AppMode = 'voice' | 'meeting'
 
@@ -53,6 +54,7 @@ interface AppState {
   dailyQuestions: DailyQuestionsState
   setDailyQuestionsEnabled: (enabled: boolean) => void
   addQuestionAnswer: (answer: QuestionAnswer) => void
+  markSessionQuestionAnswered: (questionId: string) => void
   dismissDailyQuestions: () => void
   setSessionQuestions: (questionIds: readonly string[]) => void
   resetDailyQuestionsSession: () => void
@@ -184,15 +186,40 @@ export const useAppStore = create<AppState>()(
           },
         })),
       addQuestionAnswer: (answer) =>
+        set((state) => {
+          // Build profile update if this is a profile-relevant question
+          const profileUpdate = buildProfileUpdate(answer)
+
+          return {
+            dailyQuestions: {
+              ...state.dailyQuestions,
+              answers: [...state.dailyQuestions.answers, answer],
+              askedQuestionIds: state.dailyQuestions.askedQuestionIds.includes(
+                answer.questionId
+              )
+                ? state.dailyQuestions.askedQuestionIds
+                : [...state.dailyQuestions.askedQuestionIds, answer.questionId],
+            },
+            // Update profile if relevant
+            ...(profileUpdate && {
+              profile: {
+                ...state.profile,
+                extendedData: {
+                  ...state.profile.extendedData,
+                  ...profileUpdate,
+                },
+              },
+            }),
+          }
+        }),
+      markSessionQuestionAnswered: (questionId) =>
         set((state) => ({
           dailyQuestions: {
             ...state.dailyQuestions,
-            answers: [...state.dailyQuestions.answers, answer],
-            askedQuestionIds: state.dailyQuestions.askedQuestionIds.includes(
-              answer.questionId
-            )
-              ? state.dailyQuestions.askedQuestionIds
-              : [...state.dailyQuestions.askedQuestionIds, answer.questionId],
+            currentSessionAnsweredIds:
+              state.dailyQuestions.currentSessionAnsweredIds.includes(questionId)
+                ? state.dailyQuestions.currentSessionAnsweredIds
+                : [...state.dailyQuestions.currentSessionAnsweredIds, questionId],
           },
         })),
       dismissDailyQuestions: () =>
@@ -208,6 +235,7 @@ export const useAppStore = create<AppState>()(
           dailyQuestions: {
             ...state.dailyQuestions,
             currentSessionQuestionIds: questionIds,
+            currentSessionAnsweredIds: [], // Reset on new session
             lastSessionDate: new Date().toISOString().split('T')[0],
             dismissed: false,
           },
@@ -217,6 +245,7 @@ export const useAppStore = create<AppState>()(
           dailyQuestions: {
             ...state.dailyQuestions,
             currentSessionQuestionIds: [],
+            currentSessionAnsweredIds: [],
             dismissed: false,
           },
         })),
@@ -255,17 +284,32 @@ export const useAppStore = create<AppState>()(
       }),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<AppState> & {
-          dailyQuestions?: DailyQuestionsState & {
+          dailyQuestions?: Partial<DailyQuestionsState> & {
             answers: readonly SerializedQuestionAnswer[]
           }
+          profile?: Partial<typeof currentState.profile>
         }
         return {
           ...currentState,
           ...persisted,
+          // Merge profile with defaults for new fields (extendedData)
+          profile: persisted.profile
+            ? {
+                ...currentState.profile,
+                ...persisted.profile,
+                extendedData: {
+                  ...persisted.profile.extendedData,
+                },
+              }
+            : currentState.profile,
+          // Merge dailyQuestions with defaults for new fields (currentSessionAnsweredIds)
           dailyQuestions: persisted.dailyQuestions
             ? {
+                ...currentState.dailyQuestions,
                 ...persisted.dailyQuestions,
-                answers: deserializeAnswers(persisted.dailyQuestions.answers),
+                currentSessionAnsweredIds:
+                  persisted.dailyQuestions.currentSessionAnsweredIds ?? [],
+                answers: deserializeAnswers(persisted.dailyQuestions.answers ?? []),
               }
             : currentState.dailyQuestions,
         }

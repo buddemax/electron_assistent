@@ -42,6 +42,7 @@ export interface DailyQuestionsState {
   readonly answers: readonly QuestionAnswer[]
   readonly lastSessionDate: string | null // YYYY-MM-DD
   readonly currentSessionQuestionIds: readonly string[]
+  readonly currentSessionAnsweredIds: readonly string[] // Track answered in current session (persisted)
   readonly dismissed: boolean
 }
 
@@ -51,6 +52,7 @@ export const DEFAULT_DAILY_QUESTIONS_STATE: DailyQuestionsState = {
   answers: [],
   lastSessionDate: null,
   currentSessionQuestionIds: [],
+  currentSessionAnsweredIds: [],
   dismissed: false,
 }
 

@@ -1,5 +1,5 @@
 import type { DailyQuestion, QuestionCategory } from '@/types/daily-questions'
-import { getUnansweredQuestions } from './question-pool'
+import { getUnansweredQuestions, QUESTION_POOL } from './question-pool'
 
 /**
  * Category weights for balanced selection
@@ -134,9 +134,9 @@ export function getQuestionsProgress(answeredQuestionIds: readonly string[]): {
   total: number
   percentage: number
 } {
-  const total = 60 // Approximate total questions
+  const total = QUESTION_POOL.length
   const answered = answeredQuestionIds.length
-  const percentage = Math.round((answered / total) * 100)
+  const percentage = total > 0 ? Math.round((answered / total) * 100) : 0
 
   return { answered, total, percentage }
 }

@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '@/stores/app-store'
 import { Button } from '@/components/ui/button'
 import { Toggle } from '@/components/ui/toggle'
 import { getQuestionsProgress } from '@/lib/daily-questions'
+import { ProfileEditModal } from './profile-edit-modal'
+import type { UserProfile } from '@/types/profile'
 
 type SettingsTab = 'general' | 'voice' | 'api' | 'integrations' | 'appearance' | 'hotkeys'
 
@@ -136,7 +138,12 @@ interface GeneralSettingsProps extends SettingsSectionProps<typeof import('@/typ
 
 function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding, dailyQuestionsEnabled, onDailyQuestionsEnabledChange, answeredQuestionIds }: GeneralSettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const { updateProfileField } = useAppStore()
+  const [showProfileEdit, setShowProfileEdit] = useState(false)
+  const { updateProfileField, setProfile } = useAppStore()
+
+  const handleProfileSave = useCallback((updatedProfile: UserProfile) => {
+    setProfile(updatedProfile)
+  }, [setProfile])
 
   // Get daily questions progress
   const questionsProgress = useMemo(
@@ -249,37 +256,54 @@ function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding, daily
               {profileSummary}
             </p>
           </div>
-          {showResetConfirm ? (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowResetConfirm(false)}
-              >
-                Abbrechen
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={handleResetOnboarding}
-              >
-                Zurücksetzen
-              </Button>
-            </div>
-          ) : (
+          <div className="flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setShowResetConfirm(true)}
+              onClick={() => setShowProfileEdit(true)}
             >
-              Neu einrichten
+              Bearbeiten
             </Button>
-          )}
+            {showResetConfirm ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowResetConfirm(false)}
+                >
+                  Abbrechen
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={handleResetOnboarding}
+                >
+                  Zurücksetzen
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowResetConfirm(true)}
+              >
+                Zurücksetzen
+              </Button>
+            )}
+          </div>
         </div>
         <p className="text-xs text-[var(--text-muted)] mt-2">
-          Setzt das Profil zurück und startet das Onboarding erneut.
+          Bearbeite dein Profil oder setze es komplett zurück.
         </p>
       </div>
+
+      {/* Profile Edit Modal */}
+      <ProfileEditModal
+        isOpen={showProfileEdit}
+        profile={profile}
+        onClose={() => setShowProfileEdit(false)}
+        onSave={handleProfileSave}
+      />
     </div>
   )
 }
