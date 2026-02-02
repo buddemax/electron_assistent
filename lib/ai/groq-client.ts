@@ -29,14 +29,27 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResult> {
   const client = getGroqClient(apiKey)
 
+  // Determine file extension based on MIME type
+  const mimeType = audioBlob.type || 'audio/webm'
+  let extension = 'webm'
+  if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
+    extension = 'mp3'
+  } else if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
+    extension = 'm4a'
+  } else if (mimeType.includes('wav')) {
+    extension = 'wav'
+  } else if (mimeType.includes('ogg')) {
+    extension = 'ogg'
+  }
+
   // Convert Blob to File for the API
-  const audioFile = new File([audioBlob], 'audio.webm', {
-    type: audioBlob.type || 'audio/webm',
+  const audioFile = new File([audioBlob], `audio.${extension}`, {
+    type: mimeType,
   })
 
   const response = await client.audio.transcriptions.create({
     file: audioFile,
-    model: 'whisper-large-v3',
+    model: 'whisper-large-v3-turbo',
     language: options.language || 'de',
     prompt: options.prompt,
     temperature: options.temperature ?? 0,

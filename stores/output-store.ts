@@ -6,9 +6,23 @@ import type {
   Mode,
 } from '@/types/output'
 import type { KnowledgeReference } from '@/types/knowledge'
-import type { UserProfile } from '@/types/profile'
+import type { UserProfile, OutputLength } from '@/types/profile'
 import type { Intent } from '@/lib/context/intent-detector'
 import type { Conversation } from '@/types/conversation'
+
+// Map profile's OutputLength to OutputVariant
+function mapOutputLengthToVariant(length: OutputLength): OutputVariant {
+  switch (length) {
+    case 'concise':
+      return 'short'
+    case 'balanced':
+      return 'standard'
+    case 'detailed':
+      return 'detailed'
+    default:
+      return 'standard'
+  }
+}
 
 interface ContextState {
   context: readonly KnowledgeReference[]
@@ -191,13 +205,18 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
       // Use provided conversation context or from state
       const convContext = conversationContext ?? get().contextState.conversationContext
 
+      // Determine variant from profile's preferredOutputLength
+      const preferredVariant = profile?.preferredOutputLength
+        ? mapOutputLengthToVariant(profile.preferredOutputLength)
+        : get().selectedVariant
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcription,
           mode,
-          variant: get().selectedVariant,
+          variant: preferredVariant,
           context: context.length > 0 ? context : undefined,
           profile,
           conversationContext: convContext,
@@ -218,12 +237,13 @@ export const useOutputStore = create<OutputState>()((set, get) => ({
           standard: GeneratedOutput
           detailed: GeneratedOutput
         }
-        const selectedVariant = get().selectedVariant
-        const currentOutput = outputs[selectedVariant]
+        // Use the preferred variant from profile
+        const currentOutput = outputs[preferredVariant]
 
         set({
           outputVariants: outputs,
           currentOutput,
+          selectedVariant: preferredVariant,
           detectedType: result.data.detectedType || currentOutput.type,
           isGenerating: false,
           generationProgress: 100,

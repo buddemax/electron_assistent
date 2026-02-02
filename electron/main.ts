@@ -16,15 +16,26 @@ const isDev = process.env.NODE_ENV === 'development'
 const NEXT_DEV_URL = 'http://localhost:3000'
 
 function createWindow(): void {
+  // Get the correct icon path based on platform
+  // __dirname is dist/electron/, so we need to go up 2 levels to reach project root
+  const rootDir = path.join(__dirname, '../..')
+  const iconPath = process.platform === 'darwin'
+    ? path.join(rootDir, 'build/icon.icns')
+    : process.platform === 'win32'
+    ? path.join(rootDir, 'build/icon.ico')
+    : path.join(rootDir, 'build/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 600,
     height: 700,
     minWidth: 400,
     minHeight: 500,
     frame: false,
-    backgroundColor: '#0a0a0b',
+    backgroundColor: '#FAF8F5',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
+    icon: iconPath,
+    title: 'VoiceOS',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -59,8 +70,20 @@ function createWindow(): void {
 }
 
 function createTray(): void {
-  const iconPath = path.join(__dirname, '../public/icons/tray-icon.png')
-  const icon = nativeImage.createFromPath(iconPath)
+  // Use 16x16 or 32x32 icon for tray (macOS uses template images)
+  // __dirname is dist/electron/, so we need to go up 2 levels to reach project root
+  const rootDir = path.join(__dirname, '../..')
+  const trayIconPath = process.platform === 'darwin'
+    ? path.join(rootDir, 'build/icons/16x16.png')
+    : path.join(rootDir, 'build/icons/32x32.png')
+
+  let icon = nativeImage.createFromPath(trayIconPath)
+
+  // On macOS, resize to 16x16 for proper tray display and set as template
+  if (process.platform === 'darwin') {
+    icon = icon.resize({ width: 16, height: 16 })
+    icon.setTemplateImage(true)
+  }
 
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
 
@@ -284,10 +307,126 @@ function setupIpcHandlers(): void {
     store.set('meeting-history', [])
     return true
   })
+
+  // Calendar - Create event in macOS Calendar.app
+  ipcMain.handle('calendar-create-event', async (_event, eventData: {
+    title: string
+    startDate: string
+    endDate: string
+    notes?: string
+    location?: string
+    calendarName?: string
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Calendar integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const escapeForAppleScript = (str: string): string => {
+        return str
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+      }
+
+      const title = escapeForAppleScript(eventData.title)
+      const notes = eventData.notes ? escapeForAppleScript(eventData.notes) : ''
+      const location = eventData.location ? escapeForAppleScript(eventData.location) : ''
+      const calendarName = eventData.calendarName
+
+      const startDate = new Date(eventData.startDate)
+      const endDate = new Date(eventData.endDate)
+
+      // Build calendar selection - use specified name or fall back to first available calendar
+      const calendarSelection = calendarName
+        ? `set targetCalendar to first calendar whose name is "${escapeForAppleScript(calendarName)}"`
+        : `set targetCalendar to first calendar`
+
+      const appleScript = `
+tell application "Calendar"
+  set startDate to (current date)
+  set year of startDate to ${startDate.getFullYear()}
+  set month of startDate to ${startDate.getMonth() + 1}
+  set day of startDate to ${startDate.getDate()}
+  set hours of startDate to ${startDate.getHours()}
+  set minutes of startDate to ${startDate.getMinutes()}
+  set seconds of startDate to 0
+
+  set endDate to (current date)
+  set year of endDate to ${endDate.getFullYear()}
+  set month of endDate to ${endDate.getMonth() + 1}
+  set day of endDate to ${endDate.getDate()}
+  set hours of endDate to ${endDate.getHours()}
+  set minutes of endDate to ${endDate.getMinutes()}
+  set seconds of endDate to 0
+
+  ${calendarSelection}
+  tell targetCalendar
+    set newEvent to make new event with properties {summary:"${title}", start date:startDate, end date:endDate${notes ? `, description:"${notes}"` : ''}${location ? `, location:"${location}"` : ''}}
+  end tell
+
+  return "success"
+end tell
+`
+
+      await execAsync(`osascript -e '${appleScript.replace(/'/g, "'\"'\"'")}'`)
+      return { success: true }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Calendar create event error:', errorMessage)
+      return { success: false, error: errorMessage }
+    }
+  })
+
+  // Get available calendars
+  ipcMain.handle('calendar-get-calendars', async (): Promise<{ success: boolean; calendars?: string[]; error?: string }> => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Calendar integration only available on macOS' }
+    }
+
+    try {
+      const { exec } = await import('child_process')
+      const { promisify } = await import('util')
+      const execAsync = promisify(exec)
+
+      const appleScript = `
+tell application "Calendar"
+  set calNames to {}
+  repeat with cal in calendars
+    set end of calNames to name of cal
+  end repeat
+  return calNames
+end tell
+`
+      const { stdout } = await execAsync(`osascript -e '${appleScript}'`)
+      const calendars = stdout.trim().split(', ').filter(Boolean)
+      return { success: true, calendars }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      return { success: false, error: errorMessage }
+    }
+  })
 }
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Set app name
+  app.setName('VoiceOS')
+
+  // Set dock icon on macOS
+  if (process.platform === 'darwin' && app.dock) {
+    const rootDir = path.join(__dirname, '../..')
+    const dockIconPath = path.join(rootDir, 'build/icon.png')
+    const dockIcon = nativeImage.createFromPath(dockIconPath)
+    if (!dockIcon.isEmpty()) {
+      app.dock.setIcon(dockIcon)
+    }
+  }
+
   createWindow()
   createTray()
   registerGlobalShortcuts()

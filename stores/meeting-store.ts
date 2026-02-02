@@ -82,6 +82,7 @@ interface MeetingState {
   // History
   getMeetingById: (id: string) => Meeting | null
   deleteMeeting: (id: string) => void
+  updateMeetingNotes: (id: string, notes: MeetingNotes) => void
   clearHistory: () => void
 
   // Duration Tracking
@@ -396,6 +397,14 @@ export const useMeetingStore = create<MeetingState>()(
       deleteMeeting: (id) => {
         set((state) => ({
           meetingHistory: state.meetingHistory.filter((m) => m.id !== id),
+        }))
+      },
+
+      updateMeetingNotes: (id, notes) => {
+        set((state) => ({
+          meetingHistory: state.meetingHistory.map((m) =>
+            m.id === id ? { ...m, notes } : m
+          ),
         }))
       },
 

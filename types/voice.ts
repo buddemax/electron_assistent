@@ -31,7 +31,7 @@ export interface VoiceShortcut {
 export type VoiceMode = 'idle' | 'recording' | 'transcribing' | 'processing' | 'error'
 
 export interface VoiceError {
-  readonly code: 'MICROPHONE_ACCESS_DENIED' | 'TRANSCRIPTION_FAILED' | 'NETWORK_ERROR' | 'UNKNOWN'
+  readonly code: 'MICROPHONE_ACCESS_DENIED' | 'TRANSCRIPTION_FAILED' | 'AUDIO_TOO_SHORT' | 'NETWORK_ERROR' | 'UNKNOWN'
   readonly message: string
   readonly details?: unknown
 }

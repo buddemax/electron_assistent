@@ -49,7 +49,7 @@ export function Badge({
 
 // Output type badges with specific colors
 type OutputTypeBadgeProps = {
-  type: 'email' | 'meeting-note' | 'todo' | 'question' | 'brainstorm' | 'summary' | 'code' | 'general'
+  type: 'email' | 'meeting-note' | 'todo' | 'question' | 'brainstorm' | 'summary' | 'code' | 'calendar' | 'general'
 }
 
 const outputTypeLabels: Record<OutputTypeBadgeProps['type'], string> = {
@@ -60,6 +60,7 @@ const outputTypeLabels: Record<OutputTypeBadgeProps['type'], string> = {
   brainstorm: 'Idee',
   summary: 'Summary',
   code: 'Code',
+  calendar: 'Termin',
   general: 'Allgemein',
 }
 
@@ -71,6 +72,7 @@ const outputTypeColors: Record<OutputTypeBadgeProps['type'], string> = {
   brainstorm: 'bg-pink-500/15 text-pink-400',
   summary: 'bg-cyan-500/15 text-cyan-400',
   code: 'bg-orange-500/15 text-orange-400',
+  calendar: 'bg-teal-500/15 text-teal-400',
   general: 'bg-gray-500/15 text-gray-400',
 }
 

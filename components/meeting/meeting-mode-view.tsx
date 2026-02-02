@@ -1,15 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Card } from '@/components/ui/card'
 import { Waveform } from '@/components/voice/waveform'
 import { MeetingTimer } from './meeting-timer'
 import { MeetingControls } from './meeting-controls'
 import { LiveTranscript } from './live-transcript'
+import { ExportModal } from './export'
 import { useMeetingStore } from '@/stores/meeting-store'
 import { useTranscriptStore } from '@/stores/transcript-store'
 import { useAppStore } from '@/stores/app-store'
+import { useExportStore } from '@/stores/export-store'
 import { createMeetingRecorder, type MeetingRecorder } from '@/lib/audio/meeting-recorder'
 import { createMeetingTranscriptionService, type MeetingTranscriptionService } from '@/lib/transcription/meeting-transcription-service'
 import type { MeetingConfig } from '@/types/meeting'
@@ -22,8 +24,13 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
   const [audioLevel, setAudioLevel] = useState(0)
   const [waveformData, setWaveformData] = useState<Float32Array | null>(null)
   const [isFinalizingTranscription, setIsFinalizingTranscription] = useState(false)
+  const [isGeneratingNotes, setIsGeneratingNotes] = useState(false)
+  const [lastCompletedMeetingId, setLastCompletedMeetingId] = useState<string | null>(null)
   const recorderRef = useRef<MeetingRecorder | null>(null)
   const transcriptionServiceRef = useRef<MeetingTranscriptionService | null>(null)
+
+  // Export store
+  const openExportModal = useExportStore((state) => state.openExportModal)
 
   // Meeting store
   const {
@@ -31,6 +38,7 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
     status,
     settings,
     liveTranscript,
+    meetingHistory,
     startMeeting,
     pauseMeeting,
     resumeMeeting,
@@ -42,6 +50,7 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
     addSpeaker,
     updateDuration,
     setError,
+    updateMeetingNotes,
   } = useMeetingStore()
 
   // Transcript store
@@ -219,6 +228,46 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
     // Now stop the meeting and cleanup
     const result = stopMeeting()
 
+    // Save the completed meeting ID for export option
+    if (result?.meeting?.id) {
+      setLastCompletedMeetingId(result.meeting.id)
+
+      // Generate AI meeting notes in background
+      const meeting = result.meeting
+      const transcriptText = meeting.transcriptionSegments
+        .map((seg) => seg.text)
+        .join(' ')
+
+      if (transcriptText.trim().length > 50) {
+        setIsGeneratingNotes(true)
+
+        // Call AI notes generation API
+        fetch('/api/meeting-notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript: transcriptText,
+            title: meeting.title,
+            participants: meeting.speakers.map((s) => s.name || s.id),
+            duration: meeting.duration,
+            mode: mode,
+          }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success && data.data?.notes) {
+              updateMeetingNotes(meeting.id, data.data.notes)
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to generate meeting notes:', error)
+          })
+          .finally(() => {
+            setIsGeneratingNotes(false)
+          })
+      }
+    }
+
     // Cleanup
     recorderRef.current = null
     transcriptionServiceRef.current = null
@@ -226,7 +275,17 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
     setWaveformData(null)
 
     return result
-  }, [stopMeeting])
+  }, [stopMeeting, mode, updateMeetingNotes])
+
+  const handleExportMeeting = useCallback(() => {
+    if (lastCompletedMeetingId) {
+      openExportModal(lastCompletedMeetingId)
+    }
+  }, [lastCompletedMeetingId, openExportModal])
+
+  const handleDismissExportBanner = useCallback(() => {
+    setLastCompletedMeetingId(null)
+  }, [])
 
   const isRecordingOrPaused = status === 'recording' || status === 'paused'
 
@@ -334,6 +393,96 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
           </div>
         </motion.div>
       )}
+
+      {/* Export banner after meeting ends */}
+      <AnimatePresence>
+        {lastCompletedMeetingId && status === 'idle' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="mt-4 p-4 rounded-xl bg-gradient-to-r from-[var(--accent)]/10 to-[var(--accent)]/5 border border-[var(--accent)]/20"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[var(--accent)]/20 flex items-center justify-center">
+                  {isGeneratingNotes ? (
+                    <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <DocumentIcon className="w-5 h-5 text-[var(--accent)]" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">
+                    {isGeneratingNotes ? 'KI-Notizen werden erstellt...' : 'Meeting abgeschlossen'}
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {isGeneratingNotes
+                      ? 'Zusammenfassung, Kernpunkte und Aufgaben werden generiert'
+                      : 'Exportiere das Protokoll als Word-Dokument'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDismissExportBanner}
+                  className="px-3 py-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  disabled={isGeneratingNotes}
+                >
+                  Später
+                </button>
+                <button
+                  onClick={handleExportMeeting}
+                  className="px-4 py-1.5 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isGeneratingNotes}
+                >
+                  <DownloadIcon className="w-4 h-4" />
+                  Exportieren
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Export Modal */}
+      <ExportModal />
     </div>
+  )
+}
+
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+      />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+      />
+    </svg>
   )
 }

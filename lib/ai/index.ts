@@ -7,3 +7,8 @@ export {
   type GenerateOptions,
   type GenerateResult,
 } from './gemini-client'
+export {
+  generateMeetingNotes,
+  type MeetingNotesInput,
+  type GenerateMeetingNotesResult,
+} from './meeting-notes-generator'

@@ -227,10 +227,25 @@ export const useConversationStore = create<ConversationState>()(
         }),
 
       isContinuation: (text) => {
+        const { conversations, activeConversationId } = get()
+
+        // If there's an active conversation that was updated recently (within 5 minutes),
+        // always treat as continuation to preserve conversation flow
+        if (activeConversationId) {
+          const activeConv = conversations.find(c => c.id === activeConversationId)
+          if (activeConv) {
+            const timeSinceUpdate = Date.now() - activeConv.updatedAt.getTime()
+            const fiveMinutes = 5 * 60 * 1000
+            if (timeSinceUpdate < fiveMinutes) {
+              return true
+            }
+          }
+        }
+
         const trimmed = text.trim().toLowerCase()
         const words = trimmed.split(/\s+/)
 
-        // Check explicit continuation patterns first
+        // Check explicit continuation patterns
         if (CONTINUATION_PATTERNS.some((pattern) => pattern.test(trimmed))) {
           return true
         }

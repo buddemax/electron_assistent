@@ -75,6 +75,7 @@ Mögliche Typen:
 - brainstorm: Ideen sammeln ("Ideen für...", "Brainstorming", kreative Sammlung)
 - summary: Zusammenfassen ("Fasse zusammen...", "Summary von...")
 - code: Code-bezogen ("Code für...", "Programmiere...", technische Implementierung)
+- calendar: Termine und Kalendereinträge ("Meeting am...", "Termin am Freitag um...", "Besprechung am...", enthält Datum UND Uhrzeit)
 - general: Alles andere
 
 Text: """
@@ -87,6 +88,68 @@ const VARIANT_INSTRUCTIONS = {
   short: 'Halte es kurz und prägnant. Maximal 2-3 Sätze.',
   standard: 'Ausgewogene Länge mit allen wichtigen Details.',
   detailed: 'Ausführlich mit allen Details und Kontext.',
+}
+
+// Get the prompt for a specific output type (calendar needs dynamic date)
+function getOutputTypePrompt(type: OutputType): string {
+  if (type === 'calendar') {
+    return getCalendarPrompt()
+  }
+  return OUTPUT_TYPE_PROMPTS[type]
+}
+
+// Helper function to generate calendar prompt with current date
+function getCalendarPrompt(): string {
+  const now = new Date()
+  const germanDays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+  const germanMonths = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+
+  const todayStr = `${germanDays[now.getDay()]}, ${now.getDate()}. ${germanMonths[now.getMonth()]} ${now.getFullYear()}`
+  const isoToday = now.toISOString().split('T')[0]
+
+  // Calculate tomorrow
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = `${germanDays[tomorrow.getDay()]}, ${tomorrow.getDate()}. ${germanMonths[tomorrow.getMonth()]} ${tomorrow.getFullYear()}`
+  const isoTomorrow = tomorrow.toISOString().split('T')[0]
+
+  return `Extrahiere Kalenderdaten aus dem Text und erstelle einen Termin.
+
+HEUTE IST: ${todayStr} (${isoToday})
+MORGEN IST: ${tomorrowStr} (${isoTomorrow})
+
+WICHTIG: Antworte NUR mit gültigem JSON in exakt diesem Format:
+{
+  "event": {
+    "title": "Titel des Termins",
+    "date": "${isoTomorrow}",
+    "time": "09:00",
+    "duration": 60,
+    "notes": null,
+    "location": null,
+    "attendees": []
+  },
+  "formatted": {
+    "dateDisplay": "${tomorrowStr}",
+    "timeDisplay": "09:00 - 10:00 Uhr",
+    "durationDisplay": "1 Stunde"
+  }
+}
+
+KRITISCHE REGELN:
+- "date" MUSS im ISO-Format YYYY-MM-DD sein (z.B. "${isoTomorrow}")
+- "dateDisplay" MUSS das volle deutsche Datum sein (z.B. "${tomorrowStr}")
+- "heute" = ${isoToday}
+- "morgen" = ${isoTomorrow}
+- Berechne andere Wochentage relativ zu heute (${germanDays[now.getDay()]})
+
+Weitere Regeln:
+- Erkenne Uhrzeiten: "14 Uhr" = "14:00", "halb drei" = "14:30", "9 Uhr bis 9.30" = Start 09:00, Ende 09:30 (30 Min)
+- Wenn Endzeit angegeben: Berechne Dauer aus Start- und Endzeit
+- Standard-Dauer falls nicht angegeben: 60 Minuten
+- "mit mir selbst" oder keine Teilnehmer = leeres attendees Array
+- Extrahiere Titel aus dem Kontext (z.B. "Termin mit Hans" = "Termin mit Hans")
+- timeDisplay zeigt immer Start- UND Endzeit`
 }
 
 // JSON-basierte Prompts für strukturierte, saubere Outputs
@@ -198,6 +261,8 @@ Regeln:
 - Erkenne die Intention
 - Kein Markdown, nur Zeilenumbrüche
 - Keine Einleitungen wie "Hier ist..."`,
+
+  calendar: `KALENDER_PROMPT_PLACEHOLDER`,
 }
 
 export async function detectOutputType(
@@ -218,6 +283,7 @@ export async function detectOutputType(
     'brainstorm',
     'summary',
     'code',
+    'calendar',
     'general',
   ]
 
@@ -280,7 +346,7 @@ Fragen wie "wer war dabei?", "und sonst noch?", "gibt es weitere?" beziehen sich
 ${conversationSection}` : ''}
 
 ${contextSection}
-${OUTPUT_TYPE_PROMPTS[outputType]}
+${getOutputTypePrompt(outputType)}
 
 KRITISCH: Antworte AUSSCHLIESSLICH mit gültigem JSON. Kein Text davor oder danach.`
 
@@ -510,6 +576,42 @@ function parseAndFormatOutput(text: string, type: OutputType): ParsedOutput {
       }
     }
 
+    case 'calendar': {
+      const event = parsed.event as {
+        title: string
+        date: string
+        time: string
+        duration: number
+        notes?: string
+        location?: string
+        attendees?: string[]
+      }
+      const formatted = parsed.formatted as {
+        dateDisplay: string
+        timeDisplay: string
+        durationDisplay: string
+      }
+
+      const lines: string[] = []
+      if (event?.title) lines.push(event.title)
+      if (formatted?.dateDisplay) lines.push(`📅 ${formatted.dateDisplay}`)
+      if (formatted?.timeDisplay) lines.push(`🕐 ${formatted.timeDisplay}`)
+      if (event?.location) lines.push(`📍 ${event.location}`)
+      if (event?.attendees && event.attendees.length > 0) {
+        lines.push(`👥 ${event.attendees.join(', ')}`)
+      }
+      if (event?.notes) {
+        lines.push('')
+        lines.push(event.notes)
+      }
+
+      return {
+        structured: parsed,
+        displayBody: lines.join('\n'),
+        title: event?.title || 'Neuer Termin',
+      }
+    }
+
     default: {
       return {
         structured: parsed,
@@ -556,7 +658,7 @@ export async function* streamGeneration(
 ${options.mode === 'work' ? 'Kontext: Beruflich - professioneller Ton.' : 'Kontext: Privat - freundlicher Ton.'}
 ${VARIANT_INSTRUCTIONS[options.variant]}${profileContext}
 
-${OUTPUT_TYPE_PROMPTS[outputType]}
+${getOutputTypePrompt(outputType)}
 
 KRITISCH: Antworte AUSSCHLIESSLICH mit gültigem JSON. Kein Text davor oder danach.`
 

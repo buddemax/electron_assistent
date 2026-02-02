@@ -36,6 +36,17 @@ export interface ElectronAPI {
     delete: (id: string) => Promise<boolean>
     clearHistory: () => Promise<boolean>
   }
+  calendar: {
+    createEvent: (eventData: {
+      title: string
+      startDate: string
+      endDate: string
+      notes?: string
+      location?: string
+      calendarName?: string
+    }) => Promise<{ success: boolean; error?: string }>
+    getCalendars: () => Promise<{ success: boolean; calendars?: string[]; error?: string }>
+  }
   app: {
     getVersion: () => Promise<string>
     getPlatform: () => Promise<NodeJS.Platform>
@@ -87,6 +98,17 @@ const electronAPI: ElectronAPI = {
     getHistory: <T>() => ipcRenderer.invoke('meeting-get-history') as Promise<T[]>,
     delete: (id: string) => ipcRenderer.invoke('meeting-delete', id) as Promise<boolean>,
     clearHistory: () => ipcRenderer.invoke('meeting-clear-history') as Promise<boolean>,
+  },
+  calendar: {
+    createEvent: (eventData: {
+      title: string
+      startDate: string
+      endDate: string
+      notes?: string
+      location?: string
+      calendarName?: string
+    }) => ipcRenderer.invoke('calendar-create-event', eventData) as Promise<{ success: boolean; error?: string }>,
+    getCalendars: () => ipcRenderer.invoke('calendar-get-calendars') as Promise<{ success: boolean; calendars?: string[]; error?: string }>,
   },
   app: {
     getVersion: () => ipcRenderer.invoke('get-app-version') as Promise<string>,

@@ -8,6 +8,7 @@ export type OutputType =
   | 'brainstorm'
   | 'summary'
   | 'code'
+  | 'calendar'
   | 'general'
 
 export type OutputVariant = 'short' | 'standard' | 'detailed'
@@ -162,6 +163,31 @@ export interface QuestionContent extends OutputContent {
   }
 }
 
+// Calendar output
+export interface CalendarOutput extends GeneratedOutput {
+  readonly type: 'calendar'
+  readonly content: CalendarContent
+}
+
+export interface CalendarContent extends OutputContent {
+  readonly structured: {
+    readonly event: {
+      readonly title: string
+      readonly date: string
+      readonly time: string
+      readonly duration: number
+      readonly notes?: string
+      readonly location?: string
+      readonly attendees?: readonly string[]
+    }
+    readonly formatted: {
+      readonly dateDisplay: string
+      readonly timeDisplay: string
+      readonly durationDisplay: string
+    }
+  }
+}
+
 // All output variants
 export type AnyOutput =
   | EmailOutput
@@ -171,4 +197,5 @@ export type AnyOutput =
   | BrainstormOutput
   | SummaryOutput
   | QuestionOutput
+  | CalendarOutput
   | GeneratedOutput

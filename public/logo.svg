@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" fill="none">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4A24C"/>
+      <stop offset="50%" stop-color="#C4903C"/>
+      <stop offset="100%" stop-color="#B07D32"/>
+    </linearGradient>
+  </defs>
+  <!-- V and O connected -->
+  <path
+    d="M 8 8
+       L 32 48
+       C 36 54 42 54 48 48
+       C 54 40 64 36 78 36
+       C 96 36 108 48 108 62
+       C 108 76 96 88 78 88
+       C 60 88 48 76 48 62
+       L 48 56"
+    stroke="url(#goldGradient)"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+    transform="translate(0, -20) scale(0.95)"
+  />
+</svg>

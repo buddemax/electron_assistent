@@ -5,27 +5,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useOutputStore } from '@/stores/output-store'
 import { OutputTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { OutputVariant } from '@/types/output'
+import { resolveDate } from '@/lib/utils/date'
 
 export function OutputPanel() {
   const {
     currentOutput,
-    outputVariants,
-    selectedVariant,
     detectedType,
     isGenerating,
-    setSelectedVariant,
-    contextState,
   } = useOutputStore()
 
   const [copied, setCopied] = useState(false)
-
-  const variants: OutputVariant[] = ['short', 'standard', 'detailed']
-  const variantLabels: Record<OutputVariant, string> = {
-    short: 'Kurz',
-    standard: 'Standard',
-    detailed: 'Ausführlich',
-  }
+  const [calendarAdded, setCalendarAdded] = useState(false)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
 
   const handleCopy = async () => {
     if (currentOutput?.content.body) {
@@ -69,36 +60,59 @@ export function OutputPanel() {
     }
   }
 
+  const getCalendarData = () => {
+    if (!currentOutput?.type || currentOutput.type !== 'calendar' || !currentOutput.content.structured) {
+      return null
+    }
+
+    const structured = currentOutput.content.structured as {
+      event?: {
+        title: string
+        date: string
+        time: string
+        duration: number
+        notes?: string
+        location?: string
+      }
+    }
+
+    return structured.event || null
+  }
+
+  const handleAddToCalendar = async () => {
+    const calendarData = getCalendarData()
+    if (!calendarData || !window.electronAPI?.calendar) {
+      setCalendarError('Kalender-Integration nicht verfügbar')
+      return
+    }
+
+    setCalendarError(null)
+
+    // Parse the date and time to create start and end dates
+    const startDate = resolveDate(calendarData.date, calendarData.time)
+    const endDate = new Date(startDate.getTime() + calendarData.duration * 60 * 1000)
+
+    const result = await window.electronAPI.calendar.createEvent({
+      title: calendarData.title,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      notes: calendarData.notes,
+      location: calendarData.location,
+    })
+
+    if (result.success) {
+      setCalendarAdded(true)
+      setTimeout(() => setCalendarAdded(false), 3000)
+    } else {
+      setCalendarError(result.error || 'Fehler beim Erstellen des Termins')
+    }
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header with type badge and variant selector */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center gap-3">
-          {detectedType && <OutputTypeBadge type={detectedType} />}
-        </div>
-
-        {/* Variant Tabs */}
-        <div className="flex items-center gap-1 p-1 bg-[var(--bg-secondary)] rounded-[var(--radius-md)]">
-          {variants.map((variant) => (
-            <button
-              key={variant}
-              onClick={() => setSelectedVariant(variant)}
-              disabled={!outputVariants[variant]}
-              className={`
-                px-3 py-1.5 text-xs font-medium rounded-[var(--radius-sm)]
-                transition-all duration-[var(--transition-fast)]
-                disabled:opacity-50 disabled:cursor-not-allowed
-                ${
-                  selectedVariant === variant
-                    ? 'bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-sm'
-                    : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
-                }
-              `}
-            >
-              {variantLabels[variant]}
-            </button>
-          ))}
-        </div>
+      {/* Header with type badge */}
+      <div className="flex items-center px-3 py-2 border-b border-[var(--border-subtle)]">
+        {detectedType && <OutputTypeBadge type={detectedType} />}
       </div>
 
       {/* Content */}
@@ -119,7 +133,7 @@ export function OutputPanel() {
             </motion.div>
           ) : currentOutput ? (
             <motion.div
-              key={`${currentOutput.id}-${selectedVariant}`}
+              key={currentOutput.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -148,25 +162,94 @@ export function OutputPanel() {
                 </div>
               )}
 
-              {/* Title for non-email types */}
-              {currentOutput.type !== 'email' && currentOutput.content.title && (
+              {/* Calendar-specific display */}
+              {currentOutput.type === 'calendar' && currentOutput.content.structured && (
+                <div className="space-y-2">
+                  {(() => {
+                    const structured = currentOutput.content.structured as {
+                      event?: {
+                        title: string
+                        date: string
+                        time: string
+                        duration: number
+                        location?: string
+                      }
+                      formatted?: {
+                        dateDisplay: string
+                        timeDisplay: string
+                        durationDisplay: string
+                      }
+                    }
+                    const event = structured.event
+                    const formatted = structured.formatted
+
+                    if (!event) return null
+
+                    return (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-md bg-[var(--accent)]/10 flex items-center justify-center flex-shrink-0">
+                            <CalendarIcon className="w-4 h-4 text-[var(--accent)]" />
+                          </div>
+                          <h3 className="text-sm font-medium text-[var(--text-primary)] truncate">
+                            {event.title}
+                          </h3>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs pl-10">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[var(--text-muted)] text-[10px]">📅</span>
+                            <span className="text-[var(--text-secondary)]">
+                              {formatted?.dateDisplay || event.date}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[var(--text-muted)] text-[10px]">🕐</span>
+                            <span className="text-[var(--text-secondary)]">
+                              {formatted?.timeDisplay || event.time}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[var(--text-muted)] text-[10px]">⏱</span>
+                            <span className="text-[var(--text-secondary)]">
+                              {formatted?.durationDisplay || `${event.duration} Min.`}
+                            </span>
+                          </div>
+                          {event.location && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[var(--text-muted)] text-[10px]">📍</span>
+                              <span className="text-[var(--text-secondary)] truncate">
+                                {event.location}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+
+              {/* Title for non-email/calendar types */}
+              {currentOutput.type !== 'email' && currentOutput.type !== 'calendar' && currentOutput.content.title && (
                 <h2 className="text-lg font-medium text-[var(--text-primary)]">
                   {currentOutput.content.title}
                 </h2>
               )}
 
-              {/* Body */}
-              <div className="prose prose-sm prose-invert max-w-none">
-                <div className="whitespace-pre-wrap text-[var(--text-secondary)] leading-relaxed">
-                  {currentOutput.content.body}
+              {/* Body - hide for calendar if already displayed above */}
+              {currentOutput.type !== 'calendar' && (
+                <div className="prose prose-sm prose-invert max-w-none">
+                  <div className="whitespace-pre-wrap text-[var(--text-secondary)] leading-relaxed text-sm">
+                    {currentOutput.content.body}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Metadata */}
-              <div className="pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-[var(--text-muted)]">
+              <div className="pt-3 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] text-[var(--text-muted)]">
                 <span>
-                  {currentOutput.metadata.wordCount} Wörter · ca.{' '}
-                  {currentOutput.metadata.estimatedReadTime} Min. Lesezeit
+                  {currentOutput.metadata.wordCount} Wörter
                 </span>
                 <span>
                   {new Date(currentOutput.createdAt).toLocaleTimeString('de-DE', {
@@ -193,32 +276,58 @@ export function OutputPanel() {
 
       {/* Actions */}
       {currentOutput && (
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--border-subtle)]">
-          <Button variant="secondary" size="sm" onClick={handleCopy}>
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--bg-primary)]">
+          <Button variant="secondary" size="sm" onClick={handleCopy} className="text-xs px-2 py-1">
             {copied ? (
               <>
-                <CheckIcon className="w-4 h-4 mr-1.5" />
-                Kopiert!
+                <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                Kopiert
               </>
             ) : (
               <>
-                <CopyIcon className="w-4 h-4 mr-1.5" />
+                <CopyIcon className="w-3.5 h-3.5 mr-1" />
                 Kopieren
               </>
             )}
           </Button>
 
           {currentOutput.type === 'email' && (
-            <Button variant="secondary" size="sm" onClick={handleOpenInMail}>
-              <MailIcon className="w-4 h-4 mr-1.5" />
+            <Button variant="secondary" size="sm" onClick={handleOpenInMail} className="text-xs px-2 py-1">
+              <MailIcon className="w-3.5 h-3.5 mr-1" />
               Mail
             </Button>
           )}
 
-          <Button variant="ghost" size="sm">
-            <RefreshIcon className="w-4 h-4 mr-1.5" />
-            Neu generieren
+          {currentOutput.type === 'calendar' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleAddToCalendar}
+              disabled={calendarAdded}
+              className="text-xs px-2 py-1"
+            >
+              {calendarAdded ? (
+                <>
+                  <CheckIcon className="w-3.5 h-3.5 mr-1" />
+                  Hinzugefügt
+                </>
+              ) : (
+                <>
+                  <CalendarIcon className="w-3.5 h-3.5 mr-1" />
+                  Kalender
+                </>
+              )}
+            </Button>
+          )}
+
+          <Button variant="ghost" size="sm" className="text-xs px-2 py-1">
+            <RefreshIcon className="w-3.5 h-3.5 mr-1" />
+            Neu
           </Button>
+
+          {calendarError && (
+            <span className="text-[10px] text-red-500 ml-auto">{calendarError}</span>
+          )}
         </div>
       )}
     </div>
@@ -276,6 +385,17 @@ function SourceIcon({ className }: { className?: string }) {
       <circle cx="12" cy="12" r="10" />
       <path d="M12 16v-4" />
       <path d="M12 8h.01" />
+    </svg>
+  )
+}
+
+function CalendarIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
+      <line x1="16" x2="16" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="2" y2="6" />
+      <line x1="3" x2="21" y1="10" y2="10" />
     </svg>
   )
 }

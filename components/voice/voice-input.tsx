@@ -17,7 +17,11 @@ import { ContextSidebar } from '@/components/context/context-sidebar'
 import type { EntityType } from '@/types/knowledge'
 import type { Conversation } from '@/types/conversation'
 
-export function VoiceInput() {
+interface VoiceInputProps {
+  compact?: boolean
+}
+
+export function VoiceInput({ compact = false }: VoiceInputProps) {
   const {
     voiceMode,
     isRecording,
@@ -135,7 +139,14 @@ export function VoiceInput() {
     const recorder = getRecorder()
     stopRecording()
     const blob = await recorder.stop()
-    if (!blob) {
+
+    // Check if we have a valid audio blob with minimum content
+    const MIN_AUDIO_SIZE = 5000 // ~0.5 seconds
+    if (!blob || blob.size < MIN_AUDIO_SIZE) {
+      setError({
+        code: 'AUDIO_TOO_SHORT',
+        message: 'Aufnahme zu kurz. Bitte sprich länger.',
+      })
       setVoiceMode('idle')
       return
     }
@@ -470,9 +481,9 @@ export function VoiceInput() {
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-center p-8">
+    <div className={`relative flex flex-col items-center justify-center ${compact ? 'p-3' : 'p-8'}`}>
       {/* Live Context Sidebar */}
-      {settings.general.showSuggestions && (
+      {settings.general.showSuggestions && !compact && (
         <ContextSidebar
           suggestions={liveSuggestions}
           isVisible={isRecording && liveSuggestions.length > 0}
@@ -487,7 +498,7 @@ export function VoiceInput() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-[var(--accent-subtle)] text-[var(--accent)] rounded-[var(--radius-md)] text-sm font-medium"
+            className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-[var(--accent-subtle)] text-[var(--accent)] rounded-[var(--radius-md)] text-xs font-medium"
           >
             {shortcutConfirmation}
           </motion.div>
@@ -501,23 +512,27 @@ export function VoiceInput() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="text-center"
+            className={`text-center ${compact ? 'flex items-center gap-3' : ''}`}
           >
-            <div className="w-16 h-16 rounded-full bg-[var(--error-subtle)] flex items-center justify-center mx-auto mb-4">
-              <ErrorIcon className="w-8 h-8 text-[var(--error)]" />
+            <div className={`${compact ? 'w-10 h-10' : 'w-16 h-16 mb-4'} rounded-full bg-[var(--error-subtle)] flex items-center justify-center ${compact ? '' : 'mx-auto'}`}>
+              <ErrorIcon className={`${compact ? 'w-5 h-5' : 'w-8 h-8'} text-[var(--error)]`} />
             </div>
-            <p className="text-[var(--text-primary)] font-medium mb-1">
-              Fehler
-            </p>
-            <p className="text-[var(--text-secondary)] text-sm">
-              {error.message}
-            </p>
-            <button
-              onClick={() => setError(null)}
-              className="mt-4 text-[var(--accent)] text-sm hover:underline"
-            >
-              Erneut versuchen
-            </button>
+            <div>
+              <p className={`text-[var(--text-primary)] font-medium ${compact ? 'text-sm' : 'mb-1'}`}>
+                {compact ? error.message : 'Fehler'}
+              </p>
+              {!compact && (
+                <p className="text-[var(--text-secondary)] text-sm">
+                  {error.message}
+                </p>
+              )}
+              <button
+                onClick={() => setError(null)}
+                className={`${compact ? 'ml-2' : 'mt-4'} text-[var(--accent)] text-xs hover:underline`}
+              >
+                Erneut
+              </button>
+            </div>
           </motion.div>
         ) : isRecording ? (
           <motion.div
@@ -525,26 +540,28 @@ export function VoiceInput() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="w-full max-w-md text-center"
+            className={`w-full ${compact ? 'flex items-center gap-4 justify-center' : 'max-w-md text-center'}`}
           >
             {/* Recording indicator */}
             <motion.div
-              className="recording-dot mx-auto mb-6"
+              className={`recording-dot ${compact ? '' : 'mx-auto mb-6'}`}
               animate={{ scale: [1, 1.1, 1] }}
               transition={{ duration: 1.5, repeat: Infinity }}
             />
 
-            <p className="text-[var(--text-primary)] font-medium mb-2">
-              Recording...
-            </p>
+            <div className={compact ? 'flex items-center gap-3' : ''}>
+              <p className={`text-[var(--text-primary)] font-medium ${compact ? 'text-sm' : 'mb-2'}`}>
+                Recording...
+              </p>
 
-            {/* Duration */}
-            <p className="text-[var(--text-tertiary)] text-sm font-mono mb-6">
-              {formatDuration(duration)}
-            </p>
+              {/* Duration */}
+              <p className={`text-[var(--text-tertiary)] ${compact ? 'text-xs' : 'text-sm mb-6'} font-mono`}>
+                {formatDuration(duration)}
+              </p>
+            </div>
 
-            {/* Waveform */}
-            {settings.appearance.showWaveform && (
+            {/* Waveform - only in non-compact mode */}
+            {!compact && settings.appearance.showWaveform && (
               <Waveform
                 data={waveformData}
                 isRecording={isRecording}
@@ -552,8 +569,8 @@ export function VoiceInput() {
               />
             )}
 
-            {/* Partial transcription */}
-            {partialTranscription && (
+            {/* Partial transcription - only in non-compact mode */}
+            {!compact && partialTranscription && (
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -563,13 +580,15 @@ export function VoiceInput() {
               </motion.p>
             )}
 
-            {/* Stop hint */}
-            <p className="text-[var(--text-muted)] text-xs">
-              <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)]">
-                Esc
-              </kbd>{' '}
-              zum Abbrechen
-            </p>
+            {/* Stop hint - only in non-compact mode */}
+            {!compact && (
+              <p className="text-[var(--text-muted)] text-xs">
+                <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)]">
+                  Esc
+                </kbd>{' '}
+                zum Abbrechen
+              </p>
+            )}
           </motion.div>
         ) : voiceMode === 'transcribing' ? (
           <motion.div
@@ -577,27 +596,29 @@ export function VoiceInput() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="text-center"
+            className={`text-center ${compact ? 'flex items-center gap-3' : ''}`}
           >
-            <div className="w-16 h-16 rounded-full bg-[var(--accent-subtle)] flex items-center justify-center mx-auto mb-4">
+            <div className={`${compact ? 'w-8 h-8' : 'w-16 h-16 mb-4'} rounded-full bg-[var(--accent-subtle)] flex items-center justify-center ${compact ? '' : 'mx-auto'}`}>
               <motion.div
-                className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full"
+                className={`${compact ? 'w-4 h-4' : 'w-8 h-8'} border-2 border-[var(--accent)] border-t-transparent rounded-full`}
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
               />
             </div>
-            <p className="text-[var(--text-primary)] font-medium">
+            <p className={`text-[var(--text-primary)] font-medium ${compact ? 'text-sm' : ''}`}>
               Transkribiere...
             </p>
-            <button
-              onClick={handleCancel}
-              className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
-            >
-              <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
-                Esc
-              </kbd>
-              Abbrechen
-            </button>
+            {!compact && (
+              <button
+                onClick={handleCancel}
+                className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
+              >
+                <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
+                  Esc
+                </kbd>
+                Abbrechen
+              </button>
+            )}
           </motion.div>
         ) : voiceMode === 'processing' ? (
           <motion.div
@@ -605,27 +626,29 @@ export function VoiceInput() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="text-center"
+            className={`text-center ${compact ? 'flex items-center gap-3' : ''}`}
           >
-            <div className="w-16 h-16 rounded-full bg-[var(--accent-subtle)] flex items-center justify-center mx-auto mb-4">
+            <div className={`${compact ? 'w-8 h-8' : 'w-16 h-16 mb-4'} rounded-full bg-[var(--accent-subtle)] flex items-center justify-center ${compact ? '' : 'mx-auto'}`}>
               <motion.div
-                className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full"
+                className={`${compact ? 'w-4 h-4' : 'w-8 h-8'} border-2 border-[var(--accent)] border-t-transparent rounded-full`}
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
               />
             </div>
-            <p className="text-[var(--text-primary)] font-medium">
-              Generiere Output...
+            <p className={`text-[var(--text-primary)] font-medium ${compact ? 'text-sm' : ''}`}>
+              Generiere...
             </p>
-            <button
-              onClick={handleCancel}
-              className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
-            >
-              <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
-                Esc
-              </kbd>
-              Abbrechen
-            </button>
+            {!compact && (
+              <button
+                onClick={handleCancel}
+                className="mt-4 text-[var(--text-secondary)] text-sm hover:text-[var(--text-primary)] transition-colors"
+              >
+                <kbd className="px-1.5 py-0.5 bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] mr-1">
+                  Esc
+                </kbd>
+                Abbrechen
+              </button>
+            )}
           </motion.div>
         ) : (
           <motion.div
@@ -633,20 +656,20 @@ export function VoiceInput() {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="text-center"
+            className={`text-center ${compact ? 'flex items-center gap-3' : ''}`}
           >
             {/* Mic button */}
             <motion.button
               onClick={handleStartRecording}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="w-20 h-20 rounded-full bg-[var(--accent)] flex items-center justify-center mx-auto mb-6 shadow-[var(--shadow-glow)] hover:bg-[var(--accent-hover)] transition-colors"
+              className={`${compact ? 'w-12 h-12' : 'w-20 h-20 mb-6'} rounded-full bg-[var(--accent)] flex items-center justify-center ${compact ? '' : 'mx-auto'} shadow-[var(--shadow-glow)] hover:bg-[var(--accent-hover)] transition-colors`}
             >
-              <MicIcon className="w-8 h-8 text-white" />
+              <MicIcon className={`${compact ? 'w-5 h-5' : 'w-8 h-8'} text-white`} />
             </motion.button>
 
             <AnimatePresence>
-              {showHint && (
+              {showHint && !compact && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -661,6 +684,12 @@ export function VoiceInput() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {compact && (
+              <p className="text-[var(--text-muted)] text-xs">
+                Klicke zum Sprechen
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

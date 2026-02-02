@@ -125,6 +125,7 @@ interface GeneralSettingsProps extends SettingsSectionProps<typeof import('@/typ
 
 function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: GeneralSettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const { updateProfileField } = useAppStore()
 
   const handleResetOnboarding = () => {
     onResetOnboarding()
@@ -150,6 +151,21 @@ function GeneralSettings({ settings, onUpdate, profile, onResetOnboarding }: Gen
         >
           <option value="work">Beruflich</option>
           <option value="private">Privat</option>
+        </select>
+      </SettingsRow>
+
+      <SettingsRow
+        label="Output-Länge"
+        description="Wie ausführlich sollen Texte sein?"
+      >
+        <select
+          value={profile.preferredOutputLength}
+          onChange={(e) => updateProfileField('preferredOutputLength', e.target.value as 'concise' | 'balanced' | 'detailed')}
+          className="px-3 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-[var(--radius-sm)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+        >
+          <option value="concise">Kurz & knapp</option>
+          <option value="balanced">Ausgewogen</option>
+          <option value="detailed">Ausführlich</option>
         </select>
       </SettingsRow>
 
