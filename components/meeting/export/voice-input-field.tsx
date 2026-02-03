@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAppStore } from '@/stores/app-store'
 
 interface VoiceInputFieldProps {
   value: string
@@ -22,6 +23,7 @@ export function VoiceInputField({
 }: VoiceInputFieldProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const groqApiKey = useAppStore((state) => state.settings.api.groqApiKey)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
@@ -63,6 +65,9 @@ export function VoiceInputField({
 
           const response = await fetch('/api/transcribe', {
             method: 'POST',
+            headers: {
+              'x-groq-api-key': groqApiKey,
+            },
             body: formData,
           })
 
@@ -89,7 +94,7 @@ export function VoiceInputField({
     } catch (error) {
       console.error('Failed to start recording:', error)
     }
-  }, [value, onChange])
+  }, [value, onChange, groqApiKey])
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {

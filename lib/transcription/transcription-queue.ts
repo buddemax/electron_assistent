@@ -9,6 +9,7 @@ export interface TranscriptionTask {
   readonly chunkId: string
   readonly blob: Blob
   readonly language: string
+  readonly apiKey?: string
   readonly priority: number // Lower = higher priority
   readonly retryCount: number
   readonly maxRetries: number
@@ -248,6 +249,9 @@ export class TranscriptionQueue {
 
     const response = await fetch('/api/transcribe', {
       method: 'POST',
+      headers: {
+        ...(task.apiKey ? { 'x-groq-api-key': task.apiKey } : {}),
+      },
       body: formData,
     })
 

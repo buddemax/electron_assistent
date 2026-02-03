@@ -137,6 +137,7 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
         meetingId: meeting.id,
         language: settings.language,
         enableSpeakerDetection: settings.enableSpeakerDiarization,
+        groqApiKey: appSettings.api.groqApiKey,
       },
       {
         onSegmentReady: (segment) => {
@@ -212,6 +213,7 @@ export function MeetingModeView({ className = '' }: MeetingModeViewProps) {
     setLiveTranscript,
     setError,
     clearTranscript,
+    appSettings.api.groqApiKey,
   ])
 
   const handlePauseMeeting = useCallback(() => {

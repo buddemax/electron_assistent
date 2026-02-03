@@ -58,7 +58,7 @@
 **Action:** Meeting-Modus kurz zeigen
 
 **Sagen:**
-> "Für längere Aufnahmen gibt es den Meeting-Modus. Er transkribiert in Echtzeit, erkennt Sprecher, und generiert am Ende strukturierte Meeting-Notizen mit Entscheidungen und Action Items."
+> "Für längere Aufnahmen gibt es den Meeting-Modus. Er transkribiert in Echtzeit und generiert am Ende strukturierte Meeting-Notizen mit Entscheidungen und Action Items."
 
 ---
 

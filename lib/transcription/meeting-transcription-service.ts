@@ -17,6 +17,7 @@ export interface MeetingTranscriptionConfig {
   readonly meetingId: string
   readonly language: string
   readonly enableSpeakerDetection: boolean
+  readonly groqApiKey?: string
 }
 
 export interface MeetingTranscriptionEvents {
@@ -97,6 +98,7 @@ export class MeetingTranscriptionService {
       chunkId: chunk.id,
       blob,
       language: this.config.language,
+      apiKey: this.config.groqApiKey,
       priority: chunk.index, // Process in order
       retryCount: 0,
       maxRetries: 3,

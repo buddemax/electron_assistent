@@ -165,6 +165,9 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
 
       const response = await fetch('/api/transcribe', {
         method: 'POST',
+        headers: {
+          'x-groq-api-key': settings.api.groqApiKey,
+        },
         body: formData,
         signal: abortControllerRef.current.signal,
       })
@@ -433,7 +436,7 @@ export function VoiceInput({ compact = false }: VoiceInputProps) {
     } finally {
       abortControllerRef.current = null
     }
-  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, generateOutput, mode, addKnowledgeEntry, profile, dailyQuestions.answers])
+  }, [stopRecording, setAudioBlob, setTranscription, setError, setVoiceMode, settings.general.language, settings.api.groqApiKey, generateOutput, mode, addKnowledgeEntry, profile, dailyQuestions.answers])
 
   const handleCancel = useCallback(() => {
     if (abortControllerRef.current) {
