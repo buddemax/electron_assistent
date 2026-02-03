@@ -76,7 +76,7 @@ VoiceOS schließt diese Lücke: Sprechen Sie Ihre Gedanken aus, und die App verw
 ### Voraussetzungen
 
 - Node.js 20+
-- pnpm
+- pnpm oder npm
 - macOS (für native Integrationen) oder Windows/Linux (ohne native Integrationen)
 
 ### Installation
@@ -88,6 +88,8 @@ cd everlast
 
 # Dependencies installieren
 pnpm install
+# oder
+npm install
 
 # Environment-Variablen konfigurieren
 cp .env.example .env.local
@@ -108,6 +110,8 @@ GEMINI_API_KEY=your_gemini_api_key
 ```bash
 # App im Development-Modus starten
 pnpm dev
+# oder
+npm run dev
 ```
 
 ### Production Build
@@ -115,9 +119,13 @@ pnpm dev
 ```bash
 # macOS App bauen
 pnpm build:mac
+# oder
+npm run build:mac
 
 # Windows App bauen
 pnpm build:win
+# oder
+npm run build:win
 ```
 
 ## Verwendung
