@@ -36,7 +36,9 @@
       "Bash(npx eslint:*)",
       "Bash(hdiutil attach:*)",
       "Bash(hdiutil detach:*)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "Bash(# Check if any next or electron processes are still running pgrep -f \"\"next dev\"\" && echo \"\"Found next dev processes\"\" || echo \"\"No next dev processes running\"\" lsof -i :3000)",
+      "Bash(# Kill all next.js and related processes kill 64192 83785 pkill -f \"\"next dev\"\" rm -rf /Users/maxbudde/everlast/.next/dev/lock sleep 1 lsof -i :3000)"
     ]
   }
 }

@@ -1,36 +1,200 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VoiceOS - Voice-First Desktop Assistant
 
-## Getting Started
+Eine Desktop-Anwendung, die gesprochene Eingaben in strukturierte, kontextbezogene Outputs transformiert.
 
-First, run the development server:
+## Das Problem
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Im modernen Arbeitsalltag verbringen wir viel Zeit mit repetitiven Schreibaufgaben: E-Mails formulieren, Meeting-Notizen erstellen, To-Dos festhalten. Gleichzeitig ist Sprache unser natürlichstes Kommunikationsmittel - deutlich schneller als Tippen.
+
+VoiceOS schließt diese Lücke: Sprechen Sie Ihre Gedanken aus, und die App verwandelt sie in professionelle, formatierte Dokumente - angepasst an Ihren Kontext und Arbeitsstil.
+
+## Features
+
+- **Hotkey-Aktivierung**: `Cmd+Shift+Space` aktiviert die App sofort aus jedem Workflow
+- **Voice-Pipeline**: Aufnahme → Transkription (Groq Whisper) → Enrichment (Google Gemini)
+- **Intelligente Output-Typen**: E-Mail, Meeting-Notes, To-Do, Notizen, Zusammenfassung, u.v.m.
+- **Meeting-Modus**: Lange Aufnahmen mit automatischer Chunk-Verarbeitung und Speaker-Erkennung
+- **Knowledge Base**: Persönliches Wissen merken und automatisch in Outputs einbeziehen
+- **macOS-Integration**: Direkte Erstellung von Kalendereinträgen, Erinnerungen und Notizen
+- **Personalisierung**: Anpassung an Job, Branche, Formalitätsgrad und Schreibstil
+
+## Architektur
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Electron Main Process                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Global       │  │ Tray Menu    │  │ Native           │  │
+│  │ Hotkeys      │  │ & Window     │  │ Integrations     │  │
+│  │ (Cmd+Shift+  │  │ Management   │  │ (Calendar,       │  │
+│  │  Space)      │  │              │  │  Reminders)      │  │
+│  └──────┬───────┘  └──────────────┘  └──────────────────┘  │
+│         │                                                    │
+│         │ IPC Bridge (contextBridge)                        │
+└─────────┼───────────────────────────────────────────────────┘
+          │
+┌─────────▼───────────────────────────────────────────────────┐
+│                   Next.js Renderer Process                   │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │                    Voice Pipeline                       │ │
+│  │                                                         │ │
+│  │  ┌─────────┐    ┌─────────────┐    ┌────────────────┐  │ │
+│  │  │ Record  │───►│ Transcribe  │───►│ Enrich/Generate│  │ │
+│  │  │ (Web    │    │ (Groq       │    │ (Gemini API)   │  │ │
+│  │  │  Audio) │    │  Whisper)   │    │                │  │ │
+│  │  └─────────┘    └─────────────┘    └────────────────┘  │ │
+│  │       │                                     │           │ │
+│  │       ▼                                     ▼           │ │
+│  │  Waveform &                          Knowledge Base     │ │
+│  │  Silence Detection                   Context Injection  │ │
+│  └────────────────────────────────────────────────────────┘ │
+│                                                              │
+│  ┌─────────────────┐  ┌─────────────────┐                   │
+│  │ Zustand Stores  │  │ Shortcut        │                   │
+│  │ (State Mgmt)    │  │ Detection       │                   │
+│  │                 │  │ ("merke: ...")  │                   │
+│  └─────────────────┘  └─────────────────┘                   │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Technologie-Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Komponente | Technologie |
+|------------|-------------|
+| Desktop Runtime | Electron 40 |
+| Frontend | Next.js 16 + React 19 |
+| State Management | Zustand |
+| Transkription | Groq Whisper API |
+| Text-Generierung | Google Gemini API |
+| Styling | TailwindCSS 4 |
+| Build | Electron Vite |
+| Sprache | TypeScript |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Setup
 
-## Learn More
+### Voraussetzungen
 
-To learn more about Next.js, take a look at the following resources:
+- Node.js 20+
+- pnpm
+- macOS (für native Integrationen) oder Windows/Linux (ohne native Integrationen)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Installation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Repository klonen
+git clone <repo-url>
+cd everlast
 
-## Deploy on Vercel
+# Dependencies installieren
+pnpm install
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Environment-Variablen konfigurieren
+cp .env.example .env.local
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Environment-Variablen
+
+```env
+# Groq API für Transkription (Whisper)
+GROQ_API_KEY=your_groq_api_key
+
+# Google Gemini API für Text-Generierung
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### Entwicklung
+
+```bash
+# App im Development-Modus starten
+pnpm dev
+```
+
+### Production Build
+
+```bash
+# macOS App bauen
+pnpm build:mac
+
+# Windows App bauen
+pnpm build:win
+```
+
+## Verwendung
+
+1. **App starten** - Die App läuft im Hintergrund mit Tray-Icon
+2. **Hotkey drücken** - `Cmd+Shift+Space` (macOS) oder `Ctrl+Shift+Space` (Windows)
+3. **Sprechen** - z.B. "Schreib eine E-Mail an Thomas, dass das Meeting auf Donnerstag verschoben wird"
+4. **Ergebnis erhalten** - Formatierte E-Mail mit Copy, Export und Integrations-Optionen
+
+### Sprachbefehle
+
+- `"Merke: Hans arbeitet bei Siemens"` → Speichert in Knowledge Base
+- `"Was weiß ich über Hans?"` → Sucht in Knowledge Base
+- `"Vergiss Hans"` → Löscht aus Knowledge Base
+
+### Hotkeys
+
+| Hotkey | Aktion |
+|--------|--------|
+| `Cmd+Shift+Space` | Aktivieren & Aufnahme starten |
+| `Cmd+Shift+M` | Modus wechseln (Privat/Arbeit) |
+| `Escape` | Aufnahme stoppen |
+| `Cmd+C` | Output kopieren |
+
+## Design-Entscheidungen
+
+### Warum Electron + Next.js?
+
+- **Electron**: Ermöglicht globale Hotkeys, Tray-Integration und native macOS-APIs (AppleScript)
+- **Next.js**: Modernes React-Framework mit App Router, Server-Side-Rendering für schnelle UI
+- **Kombination**: Beste aus beiden Welten - native Desktop-Features + moderne Web-Entwicklung
+
+### Warum Groq Whisper + Gemini?
+
+- **Groq Whisper**: Extrem schnelle Transkription (unter 1 Sekunde für kurze Aufnahmen), exzellente deutsche Spracherkennung
+- **Google Gemini**: Starke kontextuelle Verarbeitung, gute Instruction-Following, kostengünstig
+- **Trennung**: Ermöglicht unabhängige Skalierung und Austausch einzelner Komponenten
+
+### Warum Knowledge Base?
+
+- **Kontext ist alles**: Eine E-Mail an "Thomas" ist nur nützlich, wenn die App weiß, wer Thomas ist
+- **Lernende App**: Je mehr Kontext, desto bessere Outputs
+- **Duplikat-Erkennung**: Automatische Bereinigung verhindert Redundanzen
+
+### Warum Voice Shortcuts?
+
+- **Schnelligkeit**: Direktbefehle wie "Merke: ..." umgehen die AI-Generierung
+- **Natürlichkeit**: Sprachliche Befehle fühlen sich natürlicher an als UI-Buttons
+- **Flexibilität**: Patterns sind leicht erweiterbar
+
+### Immutable State Pattern
+
+- **Zustand mit Immutability**: Alle State-Updates erzeugen neue Objekte statt Mutationen
+- **Vorteile**: Einfacheres Debugging, zuverlässige React-Updates, bessere Testbarkeit
+
+## Projektstruktur
+
+```
+├── app/                    # Next.js App Router
+│   ├── api/               # API Routes (transcribe, generate)
+│   └── page.tsx           # Main UI
+├── components/            # React Components
+│   ├── meeting/          # Meeting-Modus UI
+│   ├── onboarding/       # Onboarding Wizard
+│   └── ...
+├── electron/              # Electron Main Process
+│   ├── main.ts           # App Entry, Hotkeys, IPC
+│   └── preload.ts        # Context Bridge
+├── lib/                   # Shared Logic
+│   ├── ai/               # Gemini Client
+│   ├── audio/            # Recording, Processing
+│   ├── knowledge/        # Knowledge Base
+│   └── transcription/    # Groq Queue
+├── stores/                # Zustand State Management
+└── types/                 # TypeScript Interfaces
+```
+
+## Lizenz
+
+MIT

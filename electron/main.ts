@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, nativeImage, clipboard, shell, powerSaveBlocker } from 'electron'
 import * as path from 'path'
 import { spawn, ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 import Store from 'electron-store'
 
 // Next.js server process
@@ -38,7 +39,27 @@ function startNextServer(): Promise<void> {
 
     console.log('Starting Next.js standalone server from:', serverPath)
 
-    nextServerProcess = spawn(process.execPath, [serverPath], {
+    const nodeRuntimePath = (() => {
+      // On macOS packaged apps, spawning the main app executable creates an extra dock tile.
+      // Use the helper executable as the Node runtime to avoid that UI artifact.
+      if (process.platform === 'darwin' && app.isPackaged) {
+        const helperName = `${app.getName()} Helper`
+        const helperPath = path.join(
+          path.dirname(process.execPath),
+          '../Frameworks',
+          `${helperName}.app`,
+          'Contents/MacOS',
+          helperName
+        )
+        if (existsSync(helperPath)) {
+          return helperPath
+        }
+        console.warn('Helper executable not found, falling back to process.execPath:', helperPath)
+      }
+      return process.execPath
+    })()
+
+    nextServerProcess = spawn(nodeRuntimePath, [serverPath], {
       cwd: standalonePath,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {

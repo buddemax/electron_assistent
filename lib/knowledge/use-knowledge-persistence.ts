@@ -7,6 +7,7 @@ import {
   deserializeEntries,
   type SerializedKnowledgeEntry,
 } from './persistence'
+import { cleanupKnowledgeEntries } from './cleanup'
 import type { KnowledgeEntry } from '@/types/knowledge'
 
 /**
@@ -31,7 +32,35 @@ export function useKnowledgePersistence() {
         const serialized = await window.electronAPI.knowledge.getAll<SerializedKnowledgeEntry>()
         if (serialized && serialized.length > 0) {
           const deserialized = deserializeEntries(serialized)
-          setEntries(deserialized)
+
+          // Cleanup: remove duplicates and enrich dates
+          const cleanupResult = cleanupKnowledgeEntries(deserialized, {
+            duplicateThreshold: 0.75,
+            dateMaxAgeMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+          })
+
+          // Persist duplicate removals
+          for (const entry of cleanupResult.duplicates.removed) {
+            try {
+              await window.electronAPI.knowledge.remove(entry.id)
+            } catch (removeError) {
+              console.error('Failed to remove duplicate entry:', removeError)
+            }
+          }
+
+          // Persist date enrichments
+          for (const entry of cleanupResult.dateEnrichment.modified) {
+            try {
+              await window.electronAPI.knowledge.update(entry.id, {
+                content: entry.content,
+                updatedAt: entry.updatedAt.toISOString(),
+              })
+            } catch (updateError) {
+              console.error('Failed to update enriched entry:', updateError)
+            }
+          }
+
+          setEntries([...cleanupResult.entries])
         }
         isInitializedRef.current = true
       } catch (error) {
